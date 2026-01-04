@@ -3,7 +3,11 @@ from networkx.algorithms import bipartite # TODO: Почему это не ис�
 import matplotlib.pyplot as plt
 import hashlib
 import random
+
+# random.seed(42)
+
 from common import Info
+from graph import BipartiteGraph
 
 hash_functions = [hashlib.sha1, hashlib.sha224, hashlib.sha256,
                   hashlib.sha384, hashlib.sha3_512, hashlib.sha512] # TODO: заменить хотя бы на CRC32
@@ -21,7 +25,7 @@ class Othello:
         self.ha = ha  # Hash function for array a
         self.hb = hb  # Hash function for array a
         self.hash_size = self.ma
-        self.g = nx.Graph()  # Bipartite graph G. It's empty from the start
+        self.g = BipartiteGraph(ma)  # Bipartite graph G. It's empty from the start
         self.a = a  # Bit array a
         self.b = b  # Bit array b
 
