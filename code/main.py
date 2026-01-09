@@ -37,9 +37,7 @@ a = bitarray.bitarray(int(n * 1.33))
 b = bitarray.bitarray(int(n * 1.33))
 ma = len(a)
 mb = len(b)
-ha = hashlib.sha3_512
-hb = hashlib.sha256
-oth = othello.Othello(ma, mb, ha, hb, a, b)
+oth = othello.Othello(ma, mb, a, b)
 
 keys, values = get_keys(json_dict)
 

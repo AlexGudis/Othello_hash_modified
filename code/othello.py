@@ -4,10 +4,12 @@ import matplotlib.pyplot as plt
 import hashlib
 import random
 
-# random.seed(42)
+random.seed(42)
 
 from common import Info
 from graph import BipartiteGraph
+from hash import HashFunction
+from math import ceil, log2
 
 hash_functions = [hashlib.sha1, hashlib.sha224, hashlib.sha256,
                   hashlib.sha384, hashlib.sha3_512, hashlib.sha512] # TODO: заменить хотя бы на CRC32
@@ -19,13 +21,14 @@ hash_functions = [hashlib.sha1, hashlib.sha224, hashlib.sha256,
 
 
 class Othello:
-    def __init__(self, ma, mb, ha, hb, a, b):
+    def __init__(self, ma, mb, a, b, ha=None, hb=None):
         self.ma = ma  # The size of bit array a
         self.mb = mb  # The size of bit array b
         self.ha = ha  # Hash function for array a
         self.hb = hb  # Hash function for array a
-        self.hash_size = self.ma
-        self.g = BipartiteGraph(ma)  # Bipartite graph G. It's empty from the start
+        self.part_size = ma # Размер доли двудольного графа (размер битового массива)
+        self.hash_size = ceil(log2(self.part_size)) # Сколько бит нужно, чтобы записать номер ячейки в битовом массиве
+        self.graph = BipartiteGraph(ma)  # Bipartite graph G. It's empty from the start
         self.a = a  # Bit array a
         self.b = b  # Bit array b
 
@@ -46,70 +49,48 @@ class Othello:
         """Checks if any cycle exists in graph g"""
         # TODO: это нужно переделать на своё
         try:
-            nx.find_cycle(self.g)
+            nx.find_cycle(self.graph)
             return True
         except nx.exception.NetworkXNoCycle:
             return False
 
     def generate_edges(self, table):
         """Генерация рёбер двудольного графа с классами рёбер"""
-        edges = set()  # Список рёбер
-        left_nodes = set()
-        right_nodes = set()
-        check_cycl = False
-
-        info = Info()
+        hash_mapping = dict() # {(u_ind, v_ind): t_k}
+        
 
         for k, v in table.items():
+            
             # Генерируем номера узлов через хеши
-            left_node = int.from_bytes(
-                self.ha(k.encode()).digest()) % self.hash_size
-            right_node = int.from_bytes(
-                self.hb(k.encode()).digest()) % self.hash_size
+            left_node = self.ha(HashFunction.convert_to_int_key(k))
+            right_node = self.hb(HashFunction.convert_to_int_key(k))
 
-            info.hash += 2
+            self.graph.add_edge(left_node, right_node)
 
-            # Узлы без классов
-            left_node_sig = f"{left_node}_L"
-            right_node_sig = f"{right_node}_R"
-
-            if (left_node_sig, right_node_sig, '1') in edges or (
-                    left_node_sig, right_node_sig, '0') in edges:
-                # print('pipipipi')
-                check_cycl = True
-
-            # print(k,left_node_sig, right_node_sig, str(v))
-
-            # Добавляем рёбра с атрибутом класса
-            edges.add((left_node_sig, right_node_sig, str(v)))
-
-            # Добавляем узлы без классов
-            left_nodes.add(left_node_sig)
-            right_nodes.add(right_node_sig)
-
-        return edges, sorted(
-            left_nodes, reverse=True), sorted(
-            right_nodes, reverse=True), check_cycl, info
+            hash_mapping[(left_node, right_node)] = int(v)
+        
+        return hash_mapping
+            
 
     def draw_graph(self):
         """Функция рисует граф с раскрашенными рёбрами"""
-        left_nodes = [n for n, d in self.g.nodes(
+        left_nodes = [n for n, d in self.graph.nodes(
             data=True) if d["bipartite"] == 0]
-        right_nodes = [n for n, d in self.g.nodes(
+        right_nodes = [n for n, d in self.graph.nodes(
             data=True) if d["bipartite"] == 1]
         left_nodes = sorted(left_nodes, reverse=True)
         right_nodes = sorted(right_nodes, reverse=True)
-        node_colors = [self.g.nodes[node]["color"] for node in self.g.nodes]
+        node_colors = [self.graph.nodes[node]["color"] for node in self.graph.nodes]
         edge_colors = [
             "green" if data['edge_class'] == '1' else "blue" for u,
             v,
-            data in self.g.edges(
+            data in self.graph.edges(
                 data=True)]
 
-        pos = nx.bipartite_layout(self.g, left_nodes)
+        pos = nx.bipartite_layout(self.graph, left_nodes)
 
         plt.figure(figsize=(8, 5))
-        nx.draw(self.g, pos, with_labels=True, node_color=node_colors,
+        nx.draw(self.graph, pos, with_labels=True, node_color=node_colors,
                 edge_color=edge_colors, width=2, font_color="red")
 
         plt.show()
@@ -117,44 +98,44 @@ class Othello:
     def check_edges_colors(self):
         "Позволяет посмотреть на узлы, ребра, их классы"
         cnt = 0
-        for u, v, data in self.g.edges(data=True):
+        for u, v, data in self.graph.edges(data=True):
             print(f"{cnt}: Ребро {u} - {v}, Класс: {data['edge_class']}")
             cnt += 1
 
     def recolor_both_gray(self, t_k, u, v, i, j):
         self.a[i] = 0
         self.b[j] = t_k
-        self.g.nodes[u]['color'] = "white"
+        self.graph.nodes[u]['color'] = "white"
         if t_k:
-            self.g.nodes[v]['color'] = "black"
+            self.graph.nodes[v]['color'] = "black"
         else:
-            self.g.nodes[v]['color'] = "white"
+            self.graph.nodes[v]['color'] = "white"
 
     def recolor_not_gray(self, t_k, u, v, i, j):
-        if self.g.nodes[u]['color'] != "gray":  # which means that a[i] is set
+        if self.graph.nodes[u]['color'] != "gray":  # which means that a[i] is set
             self.b[j] = self.a[i] ^ t_k
             if self.b[j]:
-                self.g.nodes[v]['color'] = 'black'
+                self.graph.nodes[v]['color'] = 'black'
             else:
-                self.g.nodes[v]['color'] = 'white'
+                self.graph.nodes[v]['color'] = 'white'
         else:  # which means that b[j] is set
             self.a[i] = self.b[j] ^ t_k
             if self.a[i]:
-                self.g.nodes[u]['color'] = 'black'
+                self.graph.nodes[u]['color'] = 'black'
             else:
-                self.g.nodes[u]['color'] = 'white'
+                self.graph.nodes[u]['color'] = 'white'
 
     def recolor_dfs(self, dfs_edges, info, color_check=False):
         for u, v in dfs_edges:
             u_indexes = u.split('_')
             v_indexes = v.split('_')
-            t_k = int(self.g[u][v]['edge_class'])
+            t_k = int(self.graph[u][v]['edge_class'])
             i, j = int(u_indexes[0]), int(v_indexes[0])
-            if self.g.nodes[u]['color'] == "gray" and self.g.nodes[v]['color'] == "gray":
+            if self.graph.nodes[u]['color'] == "gray" and self.graph.nodes[v]['color'] == "gray":
                 #print('Both gray')
                 self.recolor_both_gray(t_k, u, v, i, j)
 
-            elif self.g.nodes[u]['color'] != "gray" or self.g.nodes[v]['color'] != "gray":
+            elif self.graph.nodes[u]['color'] != "gray" or self.graph.nodes[v]['color'] != "gray":
                 #print('One of them are not gray')
                 self.recolor_not_gray(t_k, u, v, i, j)
 
@@ -170,10 +151,10 @@ class Othello:
         if info is None:
             info = Info()
 
-        components = list(nx.connected_components(self.g))
+        components = list(nx.connected_components(self.graph))
         all_dfs_edges = []
         for component in components:
-            subgraph = self.g.subgraph(component)
+            subgraph = self.graph.subgraph(component)
             # Берем любую вершину в компоненте
             start_node = next(iter(component))
             dfs_edges = list(nx.edge_dfs(subgraph, source=start_node))
@@ -186,65 +167,64 @@ class Othello:
         info = self.recolor_dfs(all_dfs_edges, info)
 
         return info
+    
+
+    def compute_arrays(self, hash_mapping):
+        computed_vertexes = set()
+        traversal = self.graph.connected_components()[3]
+        
+        for k, v in traversal:
+            u_ind = None
+            v_ind = None
+            if k.startswith('U'):
+                u_ind = int(k.split('_')[1])
+                v_ind = int(v.split('_')[1])
+            else:
+                u_ind = int(v.split('_')[1])
+                v_ind = int(k.split('_')[1])
+
+            t_k = hash_mapping[(u_ind, v_ind)]
+            
+            if u_ind not in computed_vertexes and v_ind not in computed_vertexes:
+                self.a[u_ind] = 0
+                self.b[v_ind] = t_k
+                computed_vertexes.add("U_" + str(u_ind))
+                computed_vertexes.add("V_" + str(v_ind))
+                
+            elif u_ind not in computed_vertexes:
+                self.a[u_ind] = self.b[v_ind] ^ t_k
+                computed_vertexes.add("U_" + str(u_ind))
+
+            elif v_ind not in computed_vertexes:
+                self.b[v_ind] = self.a[u_ind] ^ t_k
+                computed_vertexes.add("V_" + str(v_ind))
+            else:
+                print("Incorrect traversal")
+
+
 
     def construct(self, table):
         """Create and fill the whole structure of Othello based on MAC-VLAN table"""
-        info = Info(type='oth_construct')
-
+        
         # phase 1
         cycle = True
+        hash_mapping = None
         while cycle:
             print('START or cycle found')
             # Выбираем каждый раз две новые различные хеш-функции из некоторого
             # множества хеш-функций
-            self.ha, self.hb = random.sample(hash_functions, 2)
-            self.g.clear()
-
-            edges, left_nodes, right_nodes, cycle, info_check = self.generate_edges(
-                table)
-            info.hash += info_check.hash
-
-            if cycle:
-                # print(edges)
-                print('Cycle in edges found => switching hash func')
-                continue
-
-            if len(edges) != len(table):
-                print('Double found!!')
-                continue
-
-            # Добавляем вершины и ребра в граф
-            self.g.add_nodes_from(left_nodes, bipartite=0)
-            self.g.add_nodes_from(right_nodes, bipartite=1)
-            # Добавляем рёбра с атрибутом "класс"
-            for u, v, edge_class in edges:
-                self.g.add_edge(u, v, edge_class=edge_class)
-            # Изначально все вершины покрашены в серый цвет
-            # TODO: уйти от цветовой гаммы вершин, этого поля не должно быть
-            node_colors = {
-                node: "gray" for node in left_nodes}  # Левые вершины
-            # Правые вершины
-            node_colors.update({node: "gray" for node in right_nodes})
-            nx.set_node_attributes(self.g, node_colors, "color")
-
-            # Отрисовка графа
-            '''self.draw_graph()'''
-
-            # Проверка графа на циклы
-            cycle = self.check_cycle()
-
-        # print(self.g.edges)
+            self.ha = HashFunction(60, self.hash_size, self.part_size)
+            self.hb = HashFunction(60, self.hash_size, self.part_size)
+        
+            hash_mapping = self.generate_edges(table)
+            cycle = self.graph.check_cycle()
 
         # phase 2. traversal
-        # Полный обход всех рёбер и перекраска вершин по правилам
-        info_check = self.recolor()
-        info.hash += info_check.hash
-        info.memory += info_check.memory
+        self.compute_arrays(hash_mapping)
 
-        # Отрисовка графа
-        '''self.draw_graph()'''
+        print("Hello World")
 
-        return info
+
 
     def insert(self, table, k, v):
         info = Info(type='oth.insert')
@@ -275,7 +255,7 @@ class Othello:
 
         # prself.g[right_node_sig][left_node_sig]
         already_exists = False
-        if (left_node_sig, right_node_sig) in self.g.edges():
+        if (left_node_sig, right_node_sig) in self.graph.edges():
             # print('Edge is IN the graph')
             already_exists = True
 
@@ -284,19 +264,19 @@ class Othello:
         right_not_in = False
 
         # 3. Добавляем вершины в граф (если их ещё нет)
-        if left_node_sig not in self.g.nodes():
+        if left_node_sig not in self.graph.nodes():
             left_not_in = True
-            self.g.add_node(left_node_sig, bipartite=0, color="gray")
-        if right_node_sig not in self.g.nodes():
+            self.graph.add_node(left_node_sig, bipartite=0, color="gray")
+        if right_node_sig not in self.graph.nodes():
             right_not_in = True
-            self.g.add_node(right_node_sig, bipartite=1, color="gray")
+            self.graph.add_node(right_node_sig, bipartite=1, color="gray")
 
-        self.g.add_edge(left_node_sig, right_node_sig, edge_class=v)
+        self.graph.add_edge(left_node_sig, right_node_sig, edge_class=v)
 
         recolor = False
         if not already_exists:
-            if v == '1' and self.g.nodes[left_node_sig]['color'] == self.g.nodes[right_node_sig][
-                    'color'] or v == '0' and self.g.nodes[left_node_sig]['color'] != self.g.nodes[right_node_sig]['color']:
+            if v == '1' and self.graph.nodes[left_node_sig]['color'] == self.graph.nodes[right_node_sig][
+                    'color'] or v == '0' and self.graph.nodes[left_node_sig]['color'] != self.graph.nodes[right_node_sig]['color']:
                 recolor = True
 
         '''self.draw_graph()
@@ -334,7 +314,7 @@ class Othello:
             '''print(f'Oh man, recolor it...')
             print(self.g[right_node_sig][left_node_sig])'''
 
-            dfs_edges = list(nx.dfs_edges(self.g, source=left_node_sig))
+            dfs_edges = list(nx.dfs_edges(self.graph, source=left_node_sig))
 
             def is_L(node):
                 return str(node).endswith('_L')
@@ -349,7 +329,7 @@ class Othello:
             for u, v in dfs_sorted_edges:
                 u_indexes = u.split('_')
                 v_indexes = v.split('_')
-                t_k = int(self.g[u][v]['edge_class'])
+                t_k = int(self.graph[u][v]['edge_class'])
                 i, j = int(u_indexes[0]), int(v_indexes[0])
 
                 '''
@@ -358,25 +338,25 @@ class Othello:
                 print(f'u_color = {self.g.nodes[u]['color']}, v_color = {self.g.nodes[v]['color']}, t_k = {t_k}')
                 '''
 
-                if (self.g.nodes[u]['color'] != self.g.nodes[v]['color'] and t_k == 0) or (
-                        self.g.nodes[u]['color'] == self.g.nodes[v]['color'] and t_k == 1):
+                if (self.graph.nodes[u]['color'] != self.graph.nodes[v]['color'] and t_k == 0) or (
+                        self.graph.nodes[u]['color'] == self.graph.nodes[v]['color'] and t_k == 1):
                     # Нужно перекрашивать это ребро
                     # print('Color them')
                     if u not in already_seen:
                         self.a[i] = self.b[j] ^ t_k
                         # already_seen.append(u)
                         if self.a[i]:
-                            self.g.nodes[u]['color'] = 'black'
+                            self.graph.nodes[u]['color'] = 'black'
                         else:
-                            self.g.nodes[u]['color'] = 'white'
+                            self.graph.nodes[u]['color'] = 'white'
                         info.memory += 2
                     elif v not in already_seen:
                         self.b[j] = self.a[i] ^ t_k
                         # already_seen.append(v)
                         if self.b[j]:
-                            self.g.nodes[v]['color'] = 'black'
+                            self.graph.nodes[v]['color'] = 'black'
                         else:
-                            self.g.nodes[v]['color'] = 'white'
+                            self.graph.nodes[v]['color'] = 'white'
                         info.memory += 3
                 already_seen.add(u)
                 already_seen.add(v)
@@ -432,8 +412,9 @@ class Othello:
         right_node_sig = f"{right_node}_R"
         # print(f'DELETE {left_node_sig} {right_node_sig} with key {k}')
 
-        self.g.remove_edge(left_node_sig, right_node_sig)
+        self.graph.remove_edge(left_node_sig, right_node_sig)
 
         '''self.draw_graph()'''
 
         return info
+
