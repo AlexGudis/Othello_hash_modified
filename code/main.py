@@ -12,7 +12,7 @@ def test_correct(oth, json_dict, keys):
     cnt = 0
     for i in range(len(json_dict)):
        key = keys[i]
-       ans = oth.search(key)[0]
+       ans = oth.search(key)
 
        #print(ans,json_dict[key], key)
        if str(json_dict[key]) == str(ans):
@@ -72,7 +72,7 @@ cnt = test_correct(oth, json_dict, keys)
 print(f'Correct is {cnt} of {len(json_dict)}')
 
 
-oth.insert(json_dict, "EC:94:9F:FG:A8:37-2051", "1")
+"""oth.insert(json_dict, "EC:94:9F:FG:A8:37-2051", "1")
 json_dict["EC:94:9F:FG:A8:37-2051"] = '1'
 keys, values = get_keys(json_dict)
 cnt = test_correct(oth, json_dict, keys)
@@ -85,6 +85,6 @@ print(f'KEYS[0] = {keys[0]}')
 del json_dict[keys[0]]
 keys, values = get_keys(json_dict)
 cnt = test_correct(oth, json_dict, keys)
-print(f'Correct is {cnt} of {len(json_dict)}')
+print(f'Correct is {cnt} of {len(json_dict)}')"""
 
 

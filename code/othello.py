@@ -2,9 +2,6 @@ import networkx as nx # TODO: избавиться от этого, нужны �
 from networkx.algorithms import bipartite # TODO: Почему это не используется?
 import matplotlib.pyplot as plt
 import hashlib
-import random
-
-random.seed(42)
 
 from common import Info
 from graph import BipartiteGraph
@@ -36,14 +33,11 @@ class Othello:
             ma}, mb={mb}, hash_size={self.hash_size}')
 
     def search(self, key):
-        info = Info(type='oth.search')
-
         """Found a value (dest port) for key in MAC-VLAN table"""
-        i = int.from_bytes(self.ha(key.encode()).digest()) % self.hash_size
-        j = int.from_bytes(self.hb(key.encode()).digest()) % self.hash_size
-        info.hash += 2
-        info.memory += 2
-        return self.a[i] ^ self.b[j], info
+        
+        i = self.ha(HashFunction.convert_to_int_key(key))
+        j = self.hb(HashFunction.convert_to_int_key(key))
+        return self.a[i] ^ self.b[j]
 
     def check_cycle(self):
         """Checks if any cycle exists in graph g"""
@@ -57,7 +51,7 @@ class Othello:
     def generate_edges(self, table):
         """Генерация рёбер двудольного графа с классами рёбер"""
         hash_mapping = dict() # {(u_ind, v_ind): t_k}
-        
+        has_cycle = False
 
         for k, v in table.items():
             
@@ -65,11 +59,17 @@ class Othello:
             left_node = self.ha(HashFunction.convert_to_int_key(k))
             right_node = self.hb(HashFunction.convert_to_int_key(k))
 
+            if (left_node, right_node) in self.graph.adj_list:
+                # Если возникло наложение и дубляж ребра - это цикл
+                has_cycle = True
+                return hash_mapping, has_cycle
+            
             self.graph.add_edge(left_node, right_node)
 
             hash_mapping[(left_node, right_node)] = int(v)
         
-        return hash_mapping
+        # print(hash_mapping)
+        return hash_mapping, has_cycle
             
 
     def draw_graph(self):
@@ -172,6 +172,7 @@ class Othello:
     def compute_arrays(self, hash_mapping):
         computed_vertexes = set()
         traversal = self.graph.connected_components()[3]
+        # print(traversal)
         
         for k, v in traversal:
             u_ind = None
@@ -183,21 +184,23 @@ class Othello:
                 u_ind = int(v.split('_')[1])
                 v_ind = int(k.split('_')[1])
 
+            u_mark = "U_" + str(u_ind)
+            v_mark = "V_" + str(v_ind)
             t_k = hash_mapping[(u_ind, v_ind)]
             
-            if u_ind not in computed_vertexes and v_ind not in computed_vertexes:
+            if u_mark not in computed_vertexes and v_mark not in computed_vertexes:
                 self.a[u_ind] = 0
                 self.b[v_ind] = t_k
-                computed_vertexes.add("U_" + str(u_ind))
-                computed_vertexes.add("V_" + str(v_ind))
+                computed_vertexes.add(u_mark)
+                computed_vertexes.add(v_mark)
                 
-            elif u_ind not in computed_vertexes:
+            elif u_mark not in computed_vertexes:
                 self.a[u_ind] = self.b[v_ind] ^ t_k
-                computed_vertexes.add("U_" + str(u_ind))
+                computed_vertexes.add(u_mark)
 
-            elif v_ind not in computed_vertexes:
+            elif v_mark not in computed_vertexes:
                 self.b[v_ind] = self.a[u_ind] ^ t_k
-                computed_vertexes.add("V_" + str(v_ind))
+                computed_vertexes.add(v_mark)
             else:
                 print("Incorrect traversal")
 
@@ -210,13 +213,18 @@ class Othello:
         cycle = True
         hash_mapping = None
         while cycle:
-            print('START or cycle found')
-            # Выбираем каждый раз две новые различные хеш-функции из некоторого
-            # множества хеш-функций
+            if hash_mapping:
+                # Если значение не None, значит, в цикле уже были и выбрали неверные хеш-функции
+                self.graph = BipartiteGraph(self.ma)
+                print('Cycle found')
+            
             self.ha = HashFunction(60, self.hash_size, self.part_size)
             self.hb = HashFunction(60, self.hash_size, self.part_size)
         
-            hash_mapping = self.generate_edges(table)
+            hash_mapping, has_cycle = self.generate_edges(table)
+            if has_cycle:
+                continue
+
             cycle = self.graph.check_cycle()
 
         # phase 2. traversal

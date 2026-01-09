@@ -81,8 +81,8 @@ class BipartiteGraph:
         for vert in vertexes:
             Vc[components[vert]] += 1
 
-        print(self.adj_list)
-        print(self.edges_dict)
+        #print(self.adj_list)
+        #print(self.edges_dict)
 
         # 2) считаем E_c: каждое ребро лежит в компоненте своей U-вершины
         # чтобы не считать рёбра дважды, смотрим только U вершины
@@ -92,8 +92,8 @@ class BipartiteGraph:
             c = components[u_name]
             Ec[c] += 1
 
-        print(Vc)
-        print(Ec)
+        #print(Vc)
+        #print(Ec)
 
         # Проверка критерия теоремы
         for c in range(1, num + 1):

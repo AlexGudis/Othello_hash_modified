@@ -3,7 +3,11 @@ hardware applications // Proc. of Int. Conf. on Computing and Information. — C
 1994. — С. 1621—1636."""
 
 import numpy as np
-rng = np.random.default_rng(seed=42)
+import random
+
+seed = random.randint(1, 100_000_000)
+rng = np.random.default_rng(seed=seed)
+print(seed)
 
 class HashFunction:
     def __init__(self, key_dim, hash_dim, max_val=None, *, salt=None, mat=None):
@@ -67,6 +71,7 @@ class HashFunction:
 
 if __name__ == "__main__":
     hf1 = HashFunction(60, 4, 10)
-    print(hf1(HashFunction.convert_to_int_key("9C:A4:3B:8D:B4:35-906")))
+    print(hf1(HashFunction.convert_to_int_key("98:EA:4E:BD:BF:37-4075")))
+    print(hf1(HashFunction.convert_to_int_key("F7:9B:C2:01:8F:4D-684")))
     HashFunction.convert_to_int_key("9C:A4:3B:8D:B4:35-905")
 
