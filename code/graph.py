@@ -5,16 +5,19 @@ class BipartiteGraph:
     """Класс двудольного графа с полезными функциями для Отелло"""
 
     def __init__(self, size: int) -> None:
-        self.adj_list = set()  # индексы соединения вершин вида (u_index, v_index)
+        self.adj_list = {}  # индексы соединения вершин вида (u_index, v_index)
 
         # словарь вида {вершина: [вершины с ней соединенные]}, используется для dfs обхода графа
         self.edges_dict = defaultdict(list)
         self.size = size  # размер доли двудольного графа
 
-    def add_edge(self, u_index: int, v_index: int) -> None:
+    def add_edge(self, u_index: int, v_index: int, t_k) -> None:
         """Добавить ребо в структуру графа"""
 
-        self.adj_list.add((u_index, v_index))
+        self.adj_list[(u_index, v_index)] = t_k # TODO: вот это мне не очень нравится, 
+        # так как по сути храним всю таблицу как на miro: значения хеш-функций
+        # и значения ключа
+        
         self.edges_dict["U_" + str(u_index)].append("V_" + str(v_index))
         self.edges_dict["V_" + str(v_index)].append("U_" + str(u_index))
 
