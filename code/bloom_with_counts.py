@@ -10,8 +10,10 @@ class BloomFilterCounter(object):
         #Предположительно число элементов Отелло максимум увеличивается в 3 раза от исходного размера 
         # TODO: для достижения производительности нужно будет подумать над размерами.
         # Сейчас выигрываем по функциональности, но начинаем проигрывать по памяти
-        self.size = expected_elements * 3
-        self.expected_elements = expected_elements
+
+        p = 0.1 #  Вероятность ошибки при поиске элемента?
+        self.size = int(- expected_elements * (math.log(p)) / (math.log(2)) ** 2) # Размер фильтра Блума
+        self.expected_elements = expected_elements # Ожидаемое число элементов
 
         self.bloom_filter = bitarray(self.size)
         self.bloom_filter.setall(0)
@@ -21,6 +23,7 @@ class BloomFilterCounter(object):
         # Считается оптимальным кол-вом хеш-функций
         self.number_hash_functions = round((self.size / self.expected_elements) * math.log(2)) 
         print("Optimal hash functions count = ", self.number_hash_functions)
+        print("Bloom size = ", self.size)
         self.hash_fuctions = [HashFunction(60, ceil(log2(self.size)), self.size) for _ in range(self.number_hash_functions)]
 
     def add_to_filter(self, key):
