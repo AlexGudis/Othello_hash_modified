@@ -20,6 +20,14 @@ class BipartiteGraph:
         self.edges_dict["U_" + str(u_index)].append("V_" + str(v_index))
         self.edges_dict["V_" + str(v_index)].append("U_" + str(u_index))
 
+    def get_vertexes(self):
+
+        vertexes = set()  # Все установленные вершины
+        for k, v in self.edges_dict.items():
+            vertexes.add(k)
+            vertexes |= set(v)
+        return vertexes
+
     def connected_components(self) -> set | dict | int:
         """Для каждой вершины посчитаем её компоненту связности
 
@@ -49,10 +57,7 @@ class BipartiteGraph:
                     dfs(u, component_number)
 
         num = 0
-        vertexes = set()  # Все установленные вершины
-        for k, v in self.edges_dict.items():
-            vertexes.add(k)
-            vertexes |= set(v)
+        vertexes = self.get_vertexes()
 
         # print(f"All current vertexes: {vertexes}")
 
