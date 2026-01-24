@@ -17,7 +17,7 @@ class Othello:
         # Сколько бит нужно, чтобы записать номер ячейки в битовом массиве
         self.hash_size = ceil(log2(self.part_size))
         # Bipartite graph G. It's empty from the start
-        self.graph = BipartiteGraph(ma)
+        self.graph = BipartiteGraph()
         self.a = a  # Bit array a
         self.b = b  # Bit array b
 
@@ -99,7 +99,7 @@ class Othello:
         while cycle:
             if hash_mapping:
                 # Если значение не None, значит, в цикле уже были и выбрали неверные хеш-функции
-                self.graph = BipartiteGraph(self.ma)
+                self.graph = BipartiteGraph()
                 print('Cycle found')
 
             self.ha = HashFunction(60, self.hash_size, self.part_size)
@@ -171,7 +171,7 @@ class Othello:
             # Из этой вершины начинаем идти во все, которые с ней соединены
             for u in self.graph.edges_dict[vertex]:
                 if u not in visited and components[u] == component_number:  # Данную вершину пока что не обошли
-                    print(vertex, u)
+                    # print(vertex, u)
                         
                     u_ind = None
                     v_ind = None
@@ -197,48 +197,32 @@ class Othello:
                     dfs(u, component_number)
 
 
-        # print(f"All current vertexes: {vertexes}")
+        # Предположительно обход одной компоненты связности не приводит к сильному ускорению работы алгоритма
+        # Сейчас обходим полностью всю связывающую компоненту новую и проставляем заново все биты в ней
 
         for v in vertexes:
             # Если вершина не посещена в DFS обходе, то она представляет новую компоненту связности
             if v not in visited and components[v] == component_number:
-                print(v)
+                # print(v)
                 dfs(v, component_number)
 
     
-    
-    # TODO: Вероятно, избавиться от этого за ненадобностью и отсутствием use-cases
-    def addX(self, k):
-        """Input key into X"""
-        pass
-
-    def addY(self, k):
-        """Input key into Y"""
-        pass
-
-    def alter(self, k):
-        """Change key value place"""
-        pass
 
     def delete(self, k):
         """Delete key from Othello structure"""
-        info = Info('oth.delete')
+        
+        # Вот здесь нужна проверка, что ключа ТОЧНО нет
+        # Если его точно нет, то и вырезать нельзя, так как из-за коллизии хешей
+        # можем вырезать тот ключ, который не собирался быть удаленным
 
-        # Генерируем номера узлов через хеши
-        left_node = int.from_bytes(
-            self.ha(k.encode()).digest()) % self.hash_size
-        right_node = int.from_bytes(
-            self.hb(k.encode()).digest()) % self.hash_size
-        info.hash += 2
-        info.memory += 0
+        left_node = self.ha(HashFunction.convert_to_int_key(k))
+        right_node = self.hb(HashFunction.convert_to_int_key(k))
 
-        # Узлы без классов
-        # print(self.g.edges)
-        # print(k)
-        left_node_sig = f"{left_node}_L"
-        right_node_sig = f"{right_node}_R"
-        # print(f'DELETE {left_node_sig} {right_node_sig} with key {k}')
+        # Узлы по классам
+        left_node_sig = f"U_{left_node}"
+        right_node_sig = f"V_{right_node}"
 
-        self.graph.remove_edge(left_node_sig, right_node_sig)
+        self.graph.adj_list.pop((left_node, right_node), None)
+        self.graph.edges_dict.pop(left_node_sig, None)
+        self.graph.edges_dict.pop(right_node_sig, None)
 
-        return info
