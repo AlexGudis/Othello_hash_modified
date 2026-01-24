@@ -5,7 +5,7 @@ from math import ceil, log2
 from bloom_with_counts import BloomFilterCounter
 
 # TODO: у всех функций должны быть понятные полные докстринги, все параметры и возвращаемые значения аннотированы
-
+# TODO: сделай код красивым и переходим на pog
 
 class Othello:
     def __init__(self, ma, mb, a, b, ha=None, hb=None):
@@ -134,16 +134,22 @@ class Othello:
         # Генерируем номера узлов через хеши
         left_node = self.ha(HashFunction.convert_to_int_key(k))
         right_node = self.hb(HashFunction.convert_to_int_key(k))
+        left_node_sig = "U_" + str(left_node)
+        right_node_sig = "V_" + str(right_node)
 
         if (left_node, right_node) in self.graph.adj_list:
             self.construct(table | {k: value})
             return  # Потребовалось перестроение структуры (ребро дубляж)
+        
+
+        old_vertexes = self.graph.get_vertexes()
         
         self.graph.add_edge(left_node, right_node, int(value))
         self.bloom_filter.add_to_filter(k)
 
         if self.graph.check_cycle():
             self.construct(table | {k: value})
+            print("Reconstruct")
             return # Потребовалось перестроение структуры (замкнулся цикл этим ребром)
         
 
@@ -160,8 +166,24 @@ class Othello:
         if self.a[left_node] ^ self.b[right_node] == value:
             return # Вставка прошла успешно, ребро связывает вершины с установелнными корректными индексами в бит массивах
         
+
+        if left_node_sig not in old_vertexes and right_node_sig not in old_vertexes:
+            self.a[left_node] = 0
+            self.b[right_node] = int(value)
+            return
+        elif left_node_sig not in old_vertexes:
+            self.a[left_node] = self.b[right_node] ^ int(value)
+            return
+        if right_node_sig not in old_vertexes:
+            self.b[right_node] = self.a[left_node] ^ int(value)
+            return
         
+
+        # Наиболее неприятный случай, когда ребро начало соединять уже установленные вершины и оно некорректно
+        # Значит, нужно перекраска новой компоненты
         vertexes, components, num, traversal = self.graph.connected_components()
+
+
         component_number = components["U_" + str(left_node)] # Находим номер полученной компоненты связности
         visited = set()
         # Начинаем dfs обход только этих вершин
@@ -179,7 +201,7 @@ class Othello:
 
             # Из этой вершины начинаем идти во все, которые с ней соединены
             for u in self.graph.edges_dict[vertex]:
-                if u not in visited and components[u] == component_number:  # Данную вершину пока что не обошли
+                if u not in visited:  # Данную вершину пока что не обошли
                     # print(vertex, u)
                         
                     u_ind = None
@@ -208,12 +230,7 @@ class Othello:
 
         # Предположительно обход одной компоненты связности не приводит к сильному ускорению работы алгоритма
         # Сейчас обходим полностью всю связывающую компоненту новую и проставляем заново все биты в ней
-
-        for v in vertexes:
-            # Если вершина не посещена в DFS обходе, то она представляет новую компоненту связности
-            if v not in visited and components[v] == component_number:
-                # print(v)
-                dfs(v, component_number)
+        dfs("U_" + str(left_node), component_number)
 
     
 
