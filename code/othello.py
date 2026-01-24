@@ -27,7 +27,7 @@ class Othello:
         print(f'Generated Othello structure with ma={
             ma}, mb={mb}, hash_size={self.hash_size}')
 
-    def search(self, key):
+    def search(self, key: str):
         """Found a value (dest port) for key in MAC-VLAN table"""
 
         # Проверка, что мы не ищем MAC-VLAN, которых заведомо нет, такие сбрасываем
@@ -39,7 +39,7 @@ class Othello:
         return self.a[i] ^ self.b[j]
 
 
-    def generate_edges(self, table):
+    def generate_edges(self, table: dict):
         """Генерация рёбер двудольного графа с классами рёбер"""
         hash_mapping = dict()  # {(u_ind, v_ind): t_k}
         has_cycle = False
@@ -47,23 +47,23 @@ class Othello:
         for k, v in table.items():
 
             # Генерируем номера узлов через хеши
-            left_node = self.ha(HashFunction.convert_to_int_key(k))
-            right_node = self.hb(HashFunction.convert_to_int_key(k))
+            u_node = self.ha(HashFunction.convert_to_int_key(k))
+            v_node = self.hb(HashFunction.convert_to_int_key(k))
 
-            if (left_node, right_node) in self.graph.adj_list:
+            if (u_node, v_node) in self.graph.adj_list:
                 # Если возникло наложение и дубляж ребра - это цикл
                 has_cycle = True
                 return hash_mapping, has_cycle
 
-            self.graph.add_edge(left_node, right_node, int(v))
+            self.graph.add_edge(u_node, v_node, int(v))
             self.bloom_filter.add_to_filter(k)
 
-            hash_mapping[(left_node, right_node)] = int(v)
+            hash_mapping[(u_node, v_node)] = int(v)
 
         # print(hash_mapping)
         return hash_mapping, has_cycle
 
-    def compute_arrays(self, hash_mapping):
+    def compute_arrays(self, hash_mapping: dict):
         computed_vertexes = set()
         traversal = self.graph.connected_components()[3]
         # print(traversal)
@@ -98,7 +98,7 @@ class Othello:
             else:
                 print("Incorrect traversal")
 
-    def construct(self, table):
+    def construct(self, table: dict):
         """Create and fill the whole structure of Othello based on MAC-VLAN table"""
 
         # phase 1
@@ -124,7 +124,7 @@ class Othello:
 
         print("Hello World")
 
-    def insert(self, table, k, value):
+    def insert(self, table: dict, k: str, value: str):
         """Insert a key into Othello structure"""
         "Нужно передавать имеющуюся таблицу на случай невозможности добавить ключ и необходимости перестроения всей структуры"
 
@@ -132,19 +132,19 @@ class Othello:
         # TODO: нужен корректный поиск компонент связности в графе
 
         # Генерируем номера узлов через хеши
-        left_node = self.ha(HashFunction.convert_to_int_key(k))
-        right_node = self.hb(HashFunction.convert_to_int_key(k))
-        left_node_sig = "U_" + str(left_node)
-        right_node_sig = "V_" + str(right_node)
+        u_node = self.ha(HashFunction.convert_to_int_key(k))
+        v_node = self.hb(HashFunction.convert_to_int_key(k))
+        u_node_sig = "U_" + str(u_node)
+        v_node_sig = "V_" + str(v_node)
 
-        if (left_node, right_node) in self.graph.adj_list:
+        if (u_node, v_node) in self.graph.adj_list:
             self.construct(table | {k: value})
             return  # Потребовалось перестроение структуры (ребро дубляж)
         
 
         old_vertexes = self.graph.get_vertexes()
         
-        self.graph.add_edge(left_node, right_node, int(value))
+        self.graph.add_edge(u_node, v_node, int(value))
         self.bloom_filter.add_to_filter(k)
 
         if self.graph.check_cycle():
@@ -163,19 +163,19 @@ class Othello:
         # 2. Обходим по DFS всю компоненту и перекрашвиаем её
 
 
-        if self.a[left_node] ^ self.b[right_node] == value:
+        if self.a[u_node] ^ self.b[v_node] == value:
             return # Вставка прошла успешно, ребро связывает вершины с установелнными корректными индексами в бит массивах
         
 
-        if left_node_sig not in old_vertexes and right_node_sig not in old_vertexes:
-            self.a[left_node] = 0
-            self.b[right_node] = int(value)
+        if u_node_sig not in old_vertexes and v_node_sig not in old_vertexes:
+            self.a[u_node] = 0
+            self.b[v_node] = int(value)
             return
-        elif left_node_sig not in old_vertexes:
-            self.a[left_node] = self.b[right_node] ^ int(value)
+        elif u_node_sig not in old_vertexes:
+            self.a[u_node] = self.b[v_node] ^ int(value)
             return
-        if right_node_sig not in old_vertexes:
-            self.b[right_node] = self.a[left_node] ^ int(value)
+        if v_node_sig not in old_vertexes:
+            self.b[v_node] = self.a[u_node] ^ int(value)
             return
         
 
@@ -184,7 +184,7 @@ class Othello:
         vertexes, components, num, traversal = self.graph.connected_components()
 
 
-        component_number = components["U_" + str(left_node)] # Находим номер полученной компоненты связности
+        component_number = components["U_" + str(u_node)] # Находим номер полученной компоненты связности
         visited = set()
         # Начинаем dfs обход только этих вершин
 
@@ -230,25 +230,25 @@ class Othello:
 
         # Предположительно обход одной компоненты связности не приводит к сильному ускорению работы алгоритма
         # Сейчас обходим полностью всю связывающую компоненту новую и проставляем заново все биты в ней
-        dfs("U_" + str(left_node), component_number)
+        dfs("U_" + str(u_node), component_number)
 
     
 
-    def delete(self, key):
+    def delete(self, key: str):
         """Delete key from Othello structure"""
     
         # Если ключа нет, то я не могу удалять. Потенциально могу задеть те биты, которые задействованы в вычислении другихх ключей
         if self.bloom_filter.check_is_not_in_filter(key):
             return None
 
-        left_node = self.ha(HashFunction.convert_to_int_key(key))
-        right_node = self.hb(HashFunction.convert_to_int_key(key))
+        u_node = self.ha(HashFunction.convert_to_int_key(key))
+        v_node = self.hb(HashFunction.convert_to_int_key(key))
 
         # Узлы по классам
-        left_node_sig = f"U_{left_node}"
-        right_node_sig = f"V_{right_node}"
+        u_node_sig = f"U_{u_node}"
+        v_node_sig = f"V_{v_node}"
 
-        self.graph.adj_list.pop((left_node, right_node), None)
-        self.graph.edges_dict.pop(left_node_sig, None)
-        self.graph.edges_dict.pop(right_node_sig, None)
+        self.graph.adj_list.pop((u_node, v_node), None)
+        self.graph.edges_dict.pop(u_node_sig, None)
+        self.graph.edges_dict.pop(v_node_sig, None)
 
