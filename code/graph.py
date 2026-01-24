@@ -4,12 +4,11 @@ from collections import defaultdict
 class BipartiteGraph:
     """Класс двудольного графа с полезными функциями для Отелло"""
 
-    def __init__(self, size: int) -> None:
-        self.adj_list = {}  # индексы соединения вершин вида (u_index, v_index)
+    def __init__(self) -> None:
+        self.adj_list = {}  # индексы соединения вершин вида {(u_index, v_index) : t_k} по таблице
 
         # словарь вида {вершина: [вершины с ней соединенные]}, используется для dfs обхода графа
         self.edges_dict = defaultdict(list)
-        self.size = size  # размер доли двудольного графа
 
     def add_edge(self, u_index: int, v_index: int, t_k) -> None:
         """Добавить ребо в структуру графа"""
