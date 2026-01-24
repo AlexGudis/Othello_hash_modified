@@ -2,6 +2,7 @@ from common import Info
 from graph import BipartiteGraph
 from hash import HashFunction
 from math import ceil, log2
+from bloom_with_counts import BloomFilterCounter
 
 # TODO: у всех функций должны быть понятные полные докстринги, все параметры и возвращаемые значения аннотированы
 
@@ -21,11 +22,17 @@ class Othello:
         self.a = a  # Bit array a
         self.b = b  # Bit array b
 
+        self.bloom_filter = BloomFilterCounter(ma)
+
         print(f'Generated Othello structure with ma={
             ma}, mb={mb}, hash_size={self.hash_size}')
 
     def search(self, key):
         """Found a value (dest port) for key in MAC-VLAN table"""
+
+        # Проверка, что мы не ищем MAC-VLAN, которых заведомо нет, такие сбрасываем
+        if self.bloom_filter.check_is_not_in_filter(key):
+            return None
 
         i = self.ha(HashFunction.convert_to_int_key(key))
         j = self.hb(HashFunction.convert_to_int_key(key))
@@ -49,6 +56,7 @@ class Othello:
                 return hash_mapping, has_cycle
 
             self.graph.add_edge(left_node, right_node, int(v))
+            self.bloom_filter.add_to_filter(k)
 
             hash_mapping[(left_node, right_node)] = int(v)
 
@@ -132,6 +140,7 @@ class Othello:
             return  # Потребовалось перестроение структуры (ребро дубляж)
         
         self.graph.add_edge(left_node, right_node, int(value))
+        self.bloom_filter.add_to_filter(k)
 
         if self.graph.check_cycle():
             self.construct(table | {k: value})
@@ -208,15 +217,15 @@ class Othello:
 
     
 
-    def delete(self, k):
+    def delete(self, key):
         """Delete key from Othello structure"""
-        
-        # Вот здесь нужна проверка, что ключа ТОЧНО нет
-        # Если его точно нет, то и вырезать нельзя, так как из-за коллизии хешей
-        # можем вырезать тот ключ, который не собирался быть удаленным
+    
+        # Если ключа нет, то я не могу удалять. Потенциально могу задеть те биты, которые задействованы в вычислении другихх ключей
+        if self.bloom_filter.check_is_not_in_filter(key):
+            return None
 
-        left_node = self.ha(HashFunction.convert_to_int_key(k))
-        right_node = self.hb(HashFunction.convert_to_int_key(k))
+        left_node = self.ha(HashFunction.convert_to_int_key(key))
+        right_node = self.hb(HashFunction.convert_to_int_key(key))
 
         # Узлы по классам
         left_node_sig = f"U_{left_node}"
