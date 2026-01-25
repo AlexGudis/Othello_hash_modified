@@ -2,29 +2,87 @@ from graph import BipartiteGraph
 from hash import HashFunction
 from math import ceil, log2
 from bloom_with_counts import BloomFilterCounter
+import bitarray
 
 # TODO: у всех функций должны быть понятные полные докстринги, все параметры и возвращаемые значения аннотированы
 # TODO: сделай код красивым и переходим на pog
 
-class Othello:
-    def __init__(self, ma, mb, a, b, ha=None, hb=None):
-        self.ma = ma  # The size of bit array a
-        self.mb = mb  # The size of bit array b
-        self.ha = ha  # Hash function for array a
-        self.hb = hb  # Hash function for array a
-        # Размер доли двудольного графа (размер битового массива)
-        self.part_size = ma
-        # Сколько бит нужно, чтобы записать номер ячейки в битовом массиве
-        self.hash_size = ceil(log2(self.part_size))
-        # Bipartite graph G. It's empty from the start
-        self.graph = BipartiteGraph()
-        self.a = a  # Bit array a
-        self.b = b  # Bit array b
 
-        self.bloom_filter = BloomFilterCounter(ma)
+class Pog:
+
+    @staticmethod
+    def find_parts_cnt(table: dict):
+        """По таблице находим, какая длина должна быть у доли графа, вытягиваем в длину биты"""
+
+        max_elem = max([int(v) for k, v in table.items()])
+        return len(bin(max_elem)[2:])
+
+    def __init__(self, table):
+        n = len(table)
+
+        # Количество "линейных" массивов в зависимости от максимального номера порта
+        self.parts_cnt = Pog.find_parts_cnt(table)
+
+        # Хеш-функция будет работать как со столбцами, а не индексами в массиве (см миро)
+        self.part_size  = int(n * 1.33)
+
+        # Размеры битовых массивов для многоклассовой классификации Отелло
+        self.ma = self.part_size * self.parts_cnt
+        self.mb = self.part_size * self.parts_cnt
+
+        # Изначально хеш-функции пустые, определяются на этапе построения
+        self.ha = None
+        self.hb = None
+
+        # Сколько бит нужно, чтобы записать номер столбца
+        self.hash_size = ceil(log2(self.part_size))
+
+        # Двудольный граф, изначально пустой
+        self.graph = BipartiteGraph()
+
+        # Битовые массивы двудольного графа
+        self.a = bitarray.bitarray(self.ma)
+        self.b = bitarray.bitarray(self.mb)
+
+        # Фильтр Блума размера +- равному уникальному числу элементов
+        self.bloom_filter = BloomFilterCounter(self.part_size)
 
         print(f'Generated Othello structure with ma={
-            ma}, mb={mb}, hash_size={self.hash_size}')
+            self.ma}, mb={self.mb}, hash_size={self.hash_size}')
+        
+
+    def get_value(self, array, hash_number) -> int:
+        """Получение значения по хеш-номеру (столбцу)"""
+
+        value = ""
+
+        for ind in range(self.parts_cnt):
+            value += str(array[ind * self.part_size + hash_number])
+
+        value = int(value, base=2)
+        return value
+    
+
+    def set_value(self, array, hash_number: int, value: int) -> None:
+        """Установка значения по хеш-номеру (столбцу)"""
+
+        indexes = []
+        for p in range(self.parts_cnt):
+            indexes.append(p * self.part_size + hash_number)
+
+        inserting_bits = bin(value)[2:]
+
+        # Нормелизация чила: 11 -> 0011 при 16 портах
+        if len(inserting_bits) != self.parts_cnt:
+                inserting_bits = '0' * (self.parts_cnt - len(inserting_bits)) + inserting_bits
+
+        # [(ind, bit)]
+        result = list(zip(indexes, inserting_bits))
+        # print(result)
+
+        for ind, bit in result:
+            array[ind] = int(bit)
+
 
     def search(self, key: str):
         """Found a value (dest port) for key in MAC-VLAN table"""
@@ -35,8 +93,12 @@ class Othello:
 
         i = self.ha(HashFunction.convert_to_int_key(key))
         j = self.hb(HashFunction.convert_to_int_key(key))
-        return self.a[i] ^ self.b[j]
 
+        a_value = self.get_value(self.a, i)
+        b_value = self.get_value(self.b, j)
+        
+        return a_value ^ b_value
+    
 
     def generate_edges(self, table: dict):
         """Генерация рёбер двудольного графа с классами рёбер"""
@@ -82,17 +144,22 @@ class Othello:
             t_k = hash_mapping[(u_ind, v_ind)]
 
             if u_mark not in computed_vertexes and v_mark not in computed_vertexes:
-                self.a[u_ind] = 0
-                self.b[v_ind] = t_k
+                self.set_value(self.a, u_ind, 0)
+                self.set_value(self.b, v_ind, t_k)
+
                 computed_vertexes.add(u_mark)
                 computed_vertexes.add(v_mark)
 
             elif u_mark not in computed_vertexes:
-                self.a[u_ind] = self.b[v_ind] ^ t_k
+                b_value = self.get_value(self.b, v_ind)
+                self.set_value(self.a, u_ind, b_value ^ t_k)
+
                 computed_vertexes.add(u_mark)
 
             elif v_mark not in computed_vertexes:
-                self.b[v_ind] = self.a[u_ind] ^ t_k
+                a_value = self.get_value(self.a, u_ind)
+                self.set_value(self.b, v_ind, a_value ^ t_k)
+                
                 computed_vertexes.add(v_mark)
             else:
                 print("Incorrect traversal")
@@ -139,32 +206,29 @@ class Othello:
         if (u_node, v_node) in self.graph.adj_list:
             self.construct(table | {k: value})
             return  # Потребовалось перестроение структуры (ребро дубляж)
-        
 
         old_vertexes = self.graph.get_vertexes()
-        
+
         self.graph.add_edge(u_node, v_node, int(value))
         self.bloom_filter.add_to_filter(k)
 
         if self.graph.check_cycle():
             self.construct(table | {k: value})
             print("Reconstruct")
-            return # Потребовалось перестроение структуры (замкнулся цикл этим ребром)
-        
+            # Потребовалось перестроение структуры (замкнулся цикл этим ребром)
+            return
 
         # В рамках одной компоненты связности выполнить dfs обход в две стороны и понять, в какую выгоднее перекрашивать
-        # идти. 
-        # Предвариетельно проверить через search, что нужна перекраска. Много кейсов, когда это не требуется 
+        # идти.
+        # Предвариетельно проверить через search, что нужна перекраска. Много кейсов, когда это не требуется
         # Например, первый вариант - перекрас dfs по добавленному ребру, а второй - по какому-то другому, соединяющему u v компоненты
 
-        # Ребро успешно добавлено в структуру. 
+        # Ребро успешно добавлено в структуру.
         # 1. Выбираем наименьшую компоненту связности, если соединяются различные
         # 2. Обходим по DFS всю компоненту и перекрашвиаем её
 
-
         if self.a[u_node] ^ self.b[v_node] == value:
-            return # Вставка прошла успешно, ребро связывает вершины с установелнными корректными индексами в бит массивах
-        
+            return  # Вставка прошла успешно, ребро связывает вершины с установелнными корректными индексами в бит массивах
 
         if u_node_sig not in old_vertexes and v_node_sig not in old_vertexes:
             self.a[u_node] = 0
@@ -176,17 +240,15 @@ class Othello:
         if v_node_sig not in old_vertexes:
             self.b[v_node] = self.a[u_node] ^ int(value)
             return
-        
 
         # Наиболее неприятный случай, когда ребро начало соединять уже установленные вершины и оно некорректно
         # Значит, нужно перекраска новой компоненты
         vertexes, components, num, traversal = self.graph.connected_components()
 
-
-        component_number = components["U_" + str(u_node)] # Находим номер полученной компоненты связности
+        # Находим номер полученной компоненты связности
+        component_number = components["U_" + str(u_node)]
         visited = set()
         # Начинаем dfs обход только этих вершин
-
 
         def dfs(vertex: str, component_number: int) -> None:
             """Рекурсивная функция обхода графа в порядке DFS
@@ -202,7 +264,7 @@ class Othello:
             for u in self.graph.edges_dict[vertex]:
                 if u not in visited:  # Данную вершину пока что не обошли
                     # print(vertex, u)
-                        
+
                     u_ind = None
                     v_ind = None
                     change = False
@@ -217,25 +279,24 @@ class Othello:
 
                     # Если бит не соответствет, перекрашиваем
                     if self.a[u_ind] ^ self.b[v_ind] != self.graph.adj_list[(u_ind, v_ind)]:
-                        
+
                         # Что именно перекрашивает зависит от стороны, с которой подошли к вершине
                         # Перекрашиваем ту вершину, которая ещё не в visited
                         if not change:
-                            self.a[u_ind] = self.b[v_ind] ^ self.graph.adj_list[(u_ind, v_ind)]
+                            self.a[u_ind] = self.b[v_ind] ^ self.graph.adj_list[(
+                                u_ind, v_ind)]
                         else:
-                            self.b[v_ind] = self.a[u_ind] ^ self.graph.adj_list[(u_ind, v_ind)]
+                            self.b[v_ind] = self.a[u_ind] ^ self.graph.adj_list[(
+                                u_ind, v_ind)]
                     dfs(u, component_number)
-
 
         # Предположительно обход одной компоненты связности не приводит к сильному ускорению работы алгоритма
         # Сейчас обходим полностью всю связывающую компоненту новую и проставляем заново все биты в ней
         dfs("U_" + str(u_node), component_number)
 
-    
-
     def delete(self, key: str):
         """Delete key from Othello structure"""
-    
+
         # Если ключа нет, то я не могу удалять. Потенциально могу задеть те биты, которые задействованы в вычислении другихх ключей
         if self.bloom_filter.check_is_not_in_filter(key):
             return None
@@ -250,4 +311,3 @@ class Othello:
         self.graph.adj_list.pop((u_node, v_node), None)
         self.graph.edges_dict.pop(u_node_sig, None)
         self.graph.edges_dict.pop(v_node_sig, None)
-
