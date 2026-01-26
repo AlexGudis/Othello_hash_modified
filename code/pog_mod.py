@@ -218,6 +218,7 @@ class Pog:
             # Потребовалось перестроение структуры (замкнулся цикл этим ребром)
             return
 
+        # TODO: на уровне идеи
         # В рамках одной компоненты связности выполнить dfs обход в две стороны и понять, в какую выгоднее перекрашивать
         # идти.
         # Предвариетельно проверить через search, что нужна перекраска. Много кейсов, когда это не требуется
@@ -227,22 +228,28 @@ class Pog:
         # 1. Выбираем наименьшую компоненту связности, если соединяются различные
         # 2. Обходим по DFS всю компоненту и перекрашвиаем её
 
-        if self.a[u_node] ^ self.b[v_node] == value:
+        a_value = self.get_value(self.a, u_node)
+        b_value = self.get_value(self.b, v_node)
+
+        if a_value ^ b_value == value:
             return  # Вставка прошла успешно, ребро связывает вершины с установелнными корректными индексами в бит массивах
 
         if u_node_sig not in old_vertexes and v_node_sig not in old_vertexes:
-            self.a[u_node] = 0
-            self.b[v_node] = int(value)
+            # Ребро образует новую компоненту связности => установка аналогична этапу construct
+            self.set_value(self.a, u_node, 0)
+            self.set_value(self.b, v_node, int(value))
             return
-        elif u_node_sig not in old_vertexes:
-            self.a[u_node] = self.b[v_node] ^ int(value)
+        if u_node_sig not in old_vertexes:
+            # В текущей компоненте связности появляется вершина u, которая ранее в ней не была => можем вычислить значение
+            self.set_value(self.a, u_node, b_value ^ int(value))
             return
         if v_node_sig not in old_vertexes:
-            self.b[v_node] = self.a[u_node] ^ int(value)
+            # В текущей компоненте связности появляется вершина v, которая ранее в ней не была => можем вычислить значение
+            self.set_value(self.b, v_node, a_value ^ int(value))
             return
 
         # Наиболее неприятный случай, когда ребро начало соединять уже установленные вершины и оно некорректно
-        # Значит, нужно перекраска новой компоненты
+        # Значит, нужна перекраска новой компоненты
         vertexes, components, num, traversal = self.graph.connected_components()
 
         # Находим номер полученной компоненты связности
@@ -277,22 +284,25 @@ class Pog:
                         v_ind = int(u.split('_')[1])
                         change = True
 
+                    a_value = self.get_value(self.a, u_ind)
+                    b_value = self.get_value(self.b, v_ind)
+
                     # Если бит не соответствет, перекрашиваем
-                    if self.a[u_ind] ^ self.b[v_ind] != self.graph.adj_list[(u_ind, v_ind)]:
+                    if a_value ^ b_value != self.graph.adj_list[(u_ind, v_ind)]:
 
                         # Что именно перекрашивает зависит от стороны, с которой подошли к вершине
                         # Перекрашиваем ту вершину, которая ещё не в visited
                         if not change:
-                            self.a[u_ind] = self.b[v_ind] ^ self.graph.adj_list[(
-                                u_ind, v_ind)]
+                            self.set_value(self.a, u_ind, b_value ^ self.graph.adj_list[(u_ind, v_ind)])
                         else:
-                            self.b[v_ind] = self.a[u_ind] ^ self.graph.adj_list[(
-                                u_ind, v_ind)]
+                            self.set_value(self.b, v_ind, a_value ^ self.graph.adj_list[(u_ind, v_ind)])
                     dfs(u, component_number)
 
         # Предположительно обход одной компоненты связности не приводит к сильному ускорению работы алгоритма
         # Сейчас обходим полностью всю связывающую компоненту новую и проставляем заново все биты в ней
+        # Начинать можно с произвольной новой вершины, dfs обход оставляет в рамках той же компоненты связности
         dfs("U_" + str(u_node), component_number)
+
 
     def delete(self, key: str):
         """Delete key from Othello structure"""
