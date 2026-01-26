@@ -170,7 +170,7 @@ class Othello:
             self.a[u_node] = 0
             self.b[v_node] = int(value)
             return
-        elif u_node_sig not in old_vertexes:
+        if u_node_sig not in old_vertexes:
             self.a[u_node] = self.b[v_node] ^ int(value)
             return
         if v_node_sig not in old_vertexes:
