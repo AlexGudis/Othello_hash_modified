@@ -1,0 +1,2 @@
+g++ -O3 -march=native -std=c++20 test.cpp -lpcap -o test
+./test dump_2025-07-02_00-41-04.pcap > new_per_sec.tsv
