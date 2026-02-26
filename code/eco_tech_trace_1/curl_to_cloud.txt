@@ -1,0 +1,42 @@
+curl -L \
+"https://cloud.asvk.cs.msu.ru/s/3QobqzkfJfWZGLy/download?path=%2F&files=dump_2025-07-02_00-41-04.pcap002.zst" \
+| zstd -dc \
+| ./test - \
+> dump_002.tsv
+
+
+
+
+
+На вход: pcap (из stdin)
+На выход: строки вида
+mac_hex<TAB>first_seen_unix_sec
+То есть не “новые в секунду”, а “первое появление MAC в этом куске
+
+mkdir -p results_map
+
+for i in $(seq -w 002 117); do
+  fname="dump_2025-07-02_00-41-04.pcap${i}.zst"
+  echo "Processing $fname"
+
+  curl --fail -L \
+  "https://cloud.asvk.cs.msu.ru/s/3QobqzkfJfWZGLy/download?path=%2F&files=${fname}" \
+  | zstd -dc \
+  | ./test1 \
+  > "results_map/${fname%.zst}.first.tsv"
+done
+
+
+Берём минимум timestamp по каждому MAC:
+
+cat results_map/*.first.tsv \
+| sort -k1,1 -k2,2n \
+| awk '!seen[$1]++ {print $0}' \
+> global_firstseen.tsv
+
+global_firstseen.tsv теперь содержит для каждого MAC единственный timestamp — самое раннее появление во всей трассе (по всем кускам).
+
+
+awk '{cnt[$2]++} END{for (s in cnt) print s "\t" cnt[s]}' global_firstseen.tsv \
+| sort -n \
+> new_macs_per_sec.tsv
