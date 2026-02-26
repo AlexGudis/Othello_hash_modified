@@ -1,11 +1,8 @@
 import othello
-import binascii
 import json
 import bitarray
-from math import log2, ceil
-import zlib
-import hashlib
-import pog
+from pog_mod import Pog
+
 
 from common import generate_kv
 
@@ -39,7 +36,7 @@ a = bitarray.bitarray(int(n * 1.33))
 b = bitarray.bitarray(int(n * 1.33))
 ma = len(a)
 mb = len(b)
-oth = othello.Othello(ma, mb, a, b)
+pog = Pog(json_dict)
 
 keys, values = get_keys(json_dict)
 
@@ -69,22 +66,27 @@ print(f'Correct is {cnt} of {len(json_dict)}')'''
 
 
 
-oth.construct(json_dict)
-cnt = test_correct(oth, json_dict, keys)
+pog.construct(json_dict)
+cnt = test_correct(pog, json_dict, keys)
 print(f'Correct is {cnt} of {len(json_dict)}')
 
 
 # oth.insert(json_dict, "EC:94:9F:FF:A8:37-2051", "1")
 # json_dict["EC:94:9F:FF:A8:37-2051"] = '1'
 
-for i in range(10):
+
+from time import time
+start_t = time()
+for i in range(70):
     k, v = generate_kv()
-    oth.insert(json_dict, k, v)
+    pog.insert(json_dict, k, v)
     json_dict[k] = v
+end_t = time()
 
 keys, values = get_keys(json_dict)
-cnt = test_correct(oth, json_dict, keys)
+cnt = test_correct(pog, json_dict, keys)
 print(f'Correct is {cnt} of {len(json_dict)}')
+print(f"Time spent: {end_t - start_t}")
 
 
 
