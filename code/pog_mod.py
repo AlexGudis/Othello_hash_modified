@@ -43,9 +43,11 @@ class Pog:
         # Битовые массивы двудольного графа
         self.a = bitarray.bitarray(self.ma)
         self.b = bitarray.bitarray(self.mb)
+        self.a.setall(0)
+        self.b.setall(0)
 
         # Фильтр Блума размера +- равному уникальному числу элементов
-        self.bloom_filter = BloomFilterCounter(self.part_size)
+        # self.bloom_filter = BloomFilterCounter(self.part_size)
 
         print(f'Generated Othello structure with ma={
             self.ma}, mb={self.mb}, hash_size={self.hash_size}')
@@ -88,8 +90,8 @@ class Pog:
         """Found a value (dest port) for key in MAC-VLAN table"""
 
         # Проверка, что мы не ищем MAC-VLAN, которых заведомо нет, такие сбрасываем
-        if self.bloom_filter.check_is_not_in_filter(key):
-            return None
+        # if self.bloom_filter.check_is_not_in_filter(key):
+        #     return None
 
         i = self.ha(HashFunction.convert_to_int_key(key))
         j = self.hb(HashFunction.convert_to_int_key(key))
@@ -117,7 +119,7 @@ class Pog:
                 return hash_mapping, has_cycle
 
             self.graph.add_edge(u_node, v_node, int(v))
-            self.bloom_filter.add_to_filter(k)
+            # self.bloom_filter.add_to_filter(k)
 
             hash_mapping[(u_node, v_node)] = int(v)
 
@@ -173,7 +175,10 @@ class Pog:
         while cycle:
             if hash_mapping:
                 # Если значение не None, значит, в цикле уже были и выбрали неверные хеш-функции
+                # Необходимо очистить текущее состояние: сбросить граф и битовые массивы
                 self.graph = BipartiteGraph()
+                self.a.setall(0)
+                self.b.setall(0)
                 print('Cycle found')
 
             self.ha = HashFunction(60, self.hash_size, self.part_size)
@@ -188,7 +193,6 @@ class Pog:
         # phase 2. traversal
         self.compute_arrays(hash_mapping)
 
-        print("Hello World")
 
     def insert(self, table: dict, k: str, value: str):
         """Insert a key into Othello structure"""
@@ -210,7 +214,7 @@ class Pog:
         old_vertexes = self.graph.get_vertexes()
 
         self.graph.add_edge(u_node, v_node, int(value))
-        self.bloom_filter.add_to_filter(k)
+        # self.bloom_filter.add_to_filter(k)
 
         if self.graph.check_cycle():
             self.construct(table | {k: value})
@@ -308,16 +312,9 @@ class Pog:
         """Delete key from Othello structure"""
 
         # Если ключа нет, то я не могу удалять. Потенциально могу задеть те биты, которые задействованы в вычислении другихх ключей
-        if self.bloom_filter.check_is_not_in_filter(key):
-            return None
+        #if self.bloom_filter.check_is_not_in_filter(key):
+        #    return None
 
         u_node = self.ha(HashFunction.convert_to_int_key(key))
         v_node = self.hb(HashFunction.convert_to_int_key(key))
-
-        # Узлы по классам
-        u_node_sig = f"U_{u_node}"
-        v_node_sig = f"V_{v_node}"
-
-        self.graph.adj_list.pop((u_node, v_node), None)
-        self.graph.edges_dict.pop(u_node_sig, None)
-        self.graph.edges_dict.pop(v_node_sig, None)
+        self.graph.remove_edge(u_node, v_node)

@@ -8,7 +8,7 @@ class BipartiteGraph:
         self.adj_list = {}  # индексы соединения вершин вида {(u_index, v_index) : t_k} по таблице
 
         # словарь вида {вершина: [вершины с ней соединенные]}, используется для dfs обхода графа
-        self.edges_dict = defaultdict(list)
+        self.edges_dict = defaultdict(set)
 
     def add_edge(self, u_index: int, v_index: int, t_k) -> None:
         """Добавить ребо в структуру графа"""
@@ -17,8 +17,33 @@ class BipartiteGraph:
         # так как по сути храним всю таблицу как на miro: значения хеш-функций
         # и значения ключа
         
-        self.edges_dict["U_" + str(u_index)].append("V_" + str(v_index))
-        self.edges_dict["V_" + str(v_index)].append("U_" + str(u_index))
+        self.edges_dict["U_" + str(u_index)].add("V_" + str(v_index))
+        self.edges_dict["V_" + str(v_index)].add("U_" + str(u_index))
+
+
+    def remove_edge(self, u_index: int, v_index: int) -> bool:
+        """Удалить ребро из графа, если оно есть"""
+        
+        edge = (u_index, v_index)
+        
+        if edge not in self.adj_list:
+            return False
+
+        del self.adj_list[edge]
+
+        u_name = f"U_{u_index}"
+        v_name = f"V_{v_index}"
+
+        self.edges_dict[u_name].discard(v_name)
+        self.edges_dict[v_name].discard(u_name)
+
+        if not self.edges_dict[u_name]:
+            del self.edges_dict[u_name]
+
+        if not self.edges_dict[v_name]:
+            del self.edges_dict[v_name]
+
+        return True
 
     def get_vertexes(self):
 
