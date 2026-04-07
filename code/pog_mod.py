@@ -3,12 +3,60 @@ from hash import HashFunction
 from math import ceil, log2
 from bloom_with_counts import BloomFilterCounter
 import bitarray
+from dataclasses import dataclass
+from typing import Callable
+from abstracts import HashAlgorithmBase
 
 # TODO: у всех функций должны быть понятные полные докстринги, все параметры и возвращаемые значения аннотированы
 # TODO: сделай код красивым и переходим на pog
 
 
-class Pog:
+@dataclass(slots=True)
+class PogQuery:
+    """Query structure.
+
+    Хранит только данные, необходимые для lookup:
+    - параметры битового разрезания
+    - две хеш-функции
+    - два битовых массива
+    """
+
+    parts_cnt: int
+    part_size: int
+    ha: Callable
+    hb: Callable
+    a: bitarray.bitarray
+    b: bitarray.bitarray
+
+    def get_value(self, array, hash_number) -> int:
+        """Получение значения по хеш-номеру (столбцу)"""
+
+        value = ""
+
+        for ind in range(self.parts_cnt):
+            value += str(array[ind * self.part_size + hash_number])
+
+        value = int(value, base=2)
+        return value
+    
+    def find(self, key: str):
+        """Found a value (dest port) for key in MAC-VLAN table"""
+
+        # Проверка, что мы не ищем MAC-VLAN, которых заведомо нет, такие сбрасываем
+        # if self.bloom_filter.check_is_not_in_filter(key):
+        #     return None
+
+        i = self.ha(HashFunction.convert_to_int_key(key))
+        j = self.hb(HashFunction.convert_to_int_key(key))
+
+        a_value = self.get_value(self.a, i)
+        b_value = self.get_value(self.b, j)
+        
+        return a_value ^ b_value
+    
+
+
+class PogControl(HashAlgorithmBase):
 
     @staticmethod
     def find_parts_cnt(table: dict):
@@ -17,11 +65,15 @@ class Pog:
         max_elem = max([int(v) for k, v in table.items()])
         return len(bin(max_elem)[2:])
 
-    def __init__(self, table):
+    def __init__(self, table: dict[str, str] = None):
+        super().__init__()
         n = len(table)
 
+        # ControlStructure обязана хранить и поддерживать актуальной состояние таблицы
+        self.table = dict(table or {})
+
         # Количество "линейных" массивов в зависимости от максимального номера порта
-        self.parts_cnt = Pog.find_parts_cnt(table)
+        self.parts_cnt = PogControl.find_parts_cnt(self.table)
 
         # Хеш-функция будет работать как со столбцами, а не индексами в массиве (см миро)
         self.part_size  = int(n * 1.33)
@@ -45,6 +97,10 @@ class Pog:
         self.b = bitarray.bitarray(self.mb)
         self.a.setall(0)
         self.b.setall(0)
+
+        self._query: PogQuery | None = None
+
+        self.construct()
 
         # Фильтр Блума размера +- равному уникальному числу элементов
         # self.bloom_filter = BloomFilterCounter(self.part_size)
@@ -85,29 +141,33 @@ class Pog:
         for ind, bit in result:
             array[ind] = int(bit)
 
+    def _publish_query(self) -> None:
+        if self.ha is None or self.hb is None:
+            raise RuntimeError("Hash functions are not initialized")
 
-    def search(self, key: str):
+        self._query = PogQuery(
+            parts_cnt=self.parts_cnt,
+            part_size=self.part_size,
+            ha=self.ha,
+            hb=self.hb,
+            a=self.a.copy(),
+            b=self.b.copy(),
+        )
+
+
+    def find(self, key: str):
         """Found a value (dest port) for key in MAC-VLAN table"""
+        # Делаем "запрос" к query структуре для операции поиска
 
-        # Проверка, что мы не ищем MAC-VLAN, которых заведомо нет, такие сбрасываем
-        # if self.bloom_filter.check_is_not_in_filter(key):
-        #     return None
-
-        i = self.ha(HashFunction.convert_to_int_key(key))
-        j = self.hb(HashFunction.convert_to_int_key(key))
-
-        a_value = self.get_value(self.a, i)
-        b_value = self.get_value(self.b, j)
-        
-        return a_value ^ b_value
+        return self._query.find(key)
     
 
-    def generate_edges(self, table: dict):
+    def generate_edges(self):
         """Генерация рёбер двудольного графа с классами рёбер"""
         hash_mapping = dict()  # {(u_ind, v_ind): t_k}
         has_cycle = False
 
-        for k, v in table.items():
+        for k, v in self.table.items():
 
             # Генерируем номера узлов через хеши
             u_node = self.ha(HashFunction.convert_to_int_key(k))
@@ -166,7 +226,7 @@ class Pog:
             else:
                 print("Incorrect traversal")
 
-    def construct(self, table: dict):
+    def construct(self):
         """Create and fill the whole structure of Othello based on MAC-VLAN table"""
 
         # phase 1
@@ -184,7 +244,7 @@ class Pog:
             self.ha = HashFunction(60, self.hash_size, self.part_size)
             self.hb = HashFunction(60, self.hash_size, self.part_size)
 
-            hash_mapping, has_cycle = self.generate_edges(table)
+            hash_mapping, has_cycle = self.generate_edges()
             if has_cycle:
                 continue
 
@@ -192,9 +252,10 @@ class Pog:
 
         # phase 2. traversal
         self.compute_arrays(hash_mapping)
+        self._publish_query()
 
 
-    def insert(self, table: dict, k: str, value: str):
+    def insert(self, k: str, value: str):
         """Insert a key into Othello structure"""
         "Нужно передавать имеющуюся таблицу на случай невозможности добавить ключ и необходимости перестроения всей структуры"
 
@@ -208,7 +269,8 @@ class Pog:
         v_node_sig = "V_" + str(v_node)
 
         if (u_node, v_node) in self.graph.adj_list:
-            self.construct(table | {k: value})
+            self.table |= {k: value}
+            self.construct()
             return  # Потребовалось перестроение структуры (ребро дубляж)
 
         old_vertexes = self.graph.get_vertexes()
@@ -217,7 +279,8 @@ class Pog:
         # self.bloom_filter.add_to_filter(k)
 
         if self.graph.check_cycle():
-            self.construct(table | {k: value})
+            self.table |= {k: value}
+            self.construct()
             print("Reconstruct")
             # Потребовалось перестроение структуры (замкнулся цикл этим ребром)
             return
@@ -235,21 +298,34 @@ class Pog:
         a_value = self.get_value(self.a, u_node)
         b_value = self.get_value(self.b, v_node)
 
-        if a_value ^ b_value == value:
+        if a_value ^ b_value == int(value):
+            self.table |= {k: value}
             return  # Вставка прошла успешно, ребро связывает вершины с установелнными корректными индексами в бит массивах
 
         if u_node_sig not in old_vertexes and v_node_sig not in old_vertexes:
             # Ребро образует новую компоненту связности => установка аналогична этапу construct
             self.set_value(self.a, u_node, 0)
             self.set_value(self.b, v_node, int(value))
+
+            # обновляем таблицу на control structure и публикуем новую query 
+            self.table |= {k: value}
+            self._publish_query()
             return
         if u_node_sig not in old_vertexes:
             # В текущей компоненте связности появляется вершина u, которая ранее в ней не была => можем вычислить значение
             self.set_value(self.a, u_node, b_value ^ int(value))
+            
+            # обновляем таблицу на control structure и публикуем новую query 
+            self.table |= {k: value}
+            self._publish_query()
             return
         if v_node_sig not in old_vertexes:
             # В текущей компоненте связности появляется вершина v, которая ранее в ней не была => можем вычислить значение
             self.set_value(self.b, v_node, a_value ^ int(value))
+            
+            # обновляем таблицу на control structure и публикуем новую query 
+            self.table |= {k: value}
+            self._publish_query()
             return
 
         # Наиболее неприятный случай, когда ребро начало соединять уже установленные вершины и оно некорректно
@@ -306,6 +382,10 @@ class Pog:
         # Сейчас обходим полностью всю связывающую компоненту новую и проставляем заново все биты в ней
         # Начинать можно с произвольной новой вершины, dfs обход оставляет в рамках той же компоненты связности
         dfs("U_" + str(u_node), component_number)
+        
+        # обновляем таблицу на control structure и публикуем новую query 
+        self.table |= {k: value}
+        self._publish_query()
 
 
     def delete(self, key: str):
@@ -317,4 +397,5 @@ class Pog:
 
         u_node = self.ha(HashFunction.convert_to_int_key(key))
         v_node = self.hb(HashFunction.convert_to_int_key(key))
-        self.graph.remove_edge(u_node, v_node)
+        if self.graph.remove_edge(u_node, v_node):
+            del self.table[key]
