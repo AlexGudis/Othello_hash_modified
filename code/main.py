@@ -32,10 +32,6 @@ with open('mac_vlan_mapping.json', 'r') as JSON:
     json_dict = json.load(JSON)
 
 n = len(json_dict)
-a = bitarray.bitarray(int(n * 1.33))
-b = bitarray.bitarray(int(n * 1.33))
-ma = len(a)
-mb = len(b)
 pog = Pog(json_dict)
 
 keys, values = get_keys(json_dict)
@@ -77,10 +73,11 @@ print(f'Correct is {cnt} of {len(json_dict)}')
 
 from time import time
 start_t = time()
-for i in range(70):
+for i in range(10):
     k, v = generate_kv()
     pog.insert(json_dict, k, v)
-    json_dict[k] = v
+    pog.delete(k)
+    # json_dict[k] = v
 end_t = time()
 
 keys, values = get_keys(json_dict)

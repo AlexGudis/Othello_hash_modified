@@ -133,11 +133,11 @@ def generate_vlan():
     return random.randint(1, 4095)
 
 
-def generate_kv():
+def generate_kv(port_number=4):
     mac = generate_mac()
     vlan = generate_vlan()
     key = f"{mac}-{vlan}"
-    value = str(random.randint(0, 5))  # Порт
+    value = str(random.randint(0, port_number))  # Порт
     return key, value
 
 

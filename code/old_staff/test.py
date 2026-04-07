@@ -6,7 +6,7 @@ from common import get_keys, generate_mac, generate_vlan, generate_kv, draw, tes
 import time
 import random
 import json
-import pog
+import Othello_hash_modified.code.old_staff.pog as pog
 
 
 def test_correct(oth, json_dict, keys):
