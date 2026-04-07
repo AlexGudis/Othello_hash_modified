@@ -1,11 +1,12 @@
 from graph import BipartiteGraph
-from hash import HashFunction
+from hash import FastHash
 from math import ceil, log2
 from bloom_with_counts import BloomFilterCounter
 import bitarray
 from dataclasses import dataclass
 from typing import Callable
 from abstracts import HashAlgorithmBase
+import random
 
 # TODO: у всех функций должны быть понятные полные докстринги, все параметры и возвращаемые значения аннотированы
 # TODO: сделай код красивым и переходим на pog
@@ -31,12 +32,17 @@ class PogQuery:
     def get_value(self, array, hash_number) -> int:
         """Получение значения по хеш-номеру (столбцу)"""
 
-        value = ""
+        # value = ""
 
-        for ind in range(self.parts_cnt):
-            value += str(array[ind * self.part_size + hash_number])
+        # for ind in range(self.parts_cnt):
+        #     value += str(array[ind * self.part_size + hash_number])
 
-        value = int(value, base=2)
+        # value = int(value, base=2)
+
+        value = 0
+        base = hash_number
+        for part in range(self.parts_cnt):
+            value = (value << 1) | int(array[part * self.part_size + base])
         return value
     
     def find(self, key: str):
@@ -46,8 +52,9 @@ class PogQuery:
         # if self.bloom_filter.check_is_not_in_filter(key):
         #     return None
 
-        i = self.ha(HashFunction.convert_to_int_key(key))
-        j = self.hb(HashFunction.convert_to_int_key(key))
+        int_key = FastHash.convert_to_int_key(key)
+        i = self.ha(int_key)
+        j = self.hb(int_key)
 
         a_value = self.get_value(self.a, i)
         b_value = self.get_value(self.b, j)
@@ -112,34 +119,43 @@ class PogControl(HashAlgorithmBase):
     def get_value(self, array, hash_number) -> int:
         """Получение значения по хеш-номеру (столбцу)"""
 
-        value = ""
+        # value = ""
 
-        for ind in range(self.parts_cnt):
-            value += str(array[ind * self.part_size + hash_number])
+        # for ind in range(self.parts_cnt):
+        #     value += str(array[ind * self.part_size + hash_number])
 
-        value = int(value, base=2)
+        # value = int(value, base=2)
+
+        value = 0
+        base = hash_number
+        for part in range(self.parts_cnt):
+            value = (value << 1) | int(array[part * self.part_size + base])
         return value
     
 
     def set_value(self, array, hash_number: int, value: int) -> None:
         """Установка значения по хеш-номеру (столбцу)"""
 
-        indexes = []
-        for p in range(self.parts_cnt):
-            indexes.append(p * self.part_size + hash_number)
+        # indexes = []
+        # for p in range(self.parts_cnt):
+        #     indexes.append(p * self.part_size + hash_number)
 
-        inserting_bits = bin(value)[2:]
+        # inserting_bits = bin(value)[2:]
 
-        # Нормелизация чила: 11 -> 0011 при 16 портах
-        if len(inserting_bits) != self.parts_cnt:
-                inserting_bits = '0' * (self.parts_cnt - len(inserting_bits)) + inserting_bits
+        # # Нормелизация чила: 11 -> 0011 при 16 портах
+        # if len(inserting_bits) != self.parts_cnt:
+        #         inserting_bits = '0' * (self.parts_cnt - len(inserting_bits)) + inserting_bits
 
-        # [(ind, bit)]
-        result = list(zip(indexes, inserting_bits))
-        # print(result)
+        # # [(ind, bit)]
+        # result = list(zip(indexes, inserting_bits))
+        # # print(result)
 
-        for ind, bit in result:
-            array[ind] = int(bit)
+        # for ind, bit in result:
+        #     array[ind] = int(bit)
+
+        for part in range(self.parts_cnt - 1, -1, -1):
+            array[part * self.part_size + hash_number] = value & 1
+            value >>= 1
 
     def _publish_query(self) -> None:
         if self.ha is None or self.hb is None:
@@ -150,15 +166,17 @@ class PogControl(HashAlgorithmBase):
             part_size=self.part_size,
             ha=self.ha,
             hb=self.hb,
-            a=self.a.copy(),
-            b=self.b.copy(),
+            a=self.a,
+            b=self.b,
         )
 
 
     def find(self, key: str):
         """Found a value (dest port) for key in MAC-VLAN table"""
         # Делаем "запрос" к query структуре для операции поиска
-
+        # Число вызовов хеш-функций увеливаем на 2
+        self.metrics.inc("hash_calls_total")
+        self.metrics.inc("hash_calls_total")
         return self._query.find(key)
     
 
@@ -170,8 +188,10 @@ class PogControl(HashAlgorithmBase):
         for k, v in self.table.items():
 
             # Генерируем номера узлов через хеши
-            u_node = self.ha(HashFunction.convert_to_int_key(k))
-            v_node = self.hb(HashFunction.convert_to_int_key(k))
+            u_node = self.ha(FastHash.convert_to_int_key(k))
+            v_node = self.hb(FastHash.convert_to_int_key(k))
+            self.metrics.inc("hash_calls_total")
+            self.metrics.inc("hash_calls_total")
 
             if (u_node, v_node) in self.graph.adj_list:
                 # Если возникло наложение и дубляж ребра - это цикл
@@ -241,8 +261,14 @@ class PogControl(HashAlgorithmBase):
                 self.b.setall(0)
                 print('Cycle found')
 
-            self.ha = HashFunction(60, self.hash_size, self.part_size)
-            self.hb = HashFunction(60, self.hash_size, self.part_size)
+            # self.ha = HashFunction(60, self.hash_size, self.part_size)
+            # self.hb = HashFunction(60, self.hash_size, self.part_size)
+
+            self.ha = FastHash(random.getrandbits(64), self.part_size)
+            self.hb = FastHash(random.getrandbits(64), self.part_size)
+            
+            self.metrics.inc("hash_calls_total")
+            self.metrics.inc("hash_calls_total")
 
             hash_mapping, has_cycle = self.generate_edges()
             if has_cycle:
@@ -263,8 +289,11 @@ class PogControl(HashAlgorithmBase):
         # TODO: нужен корректный поиск компонент связности в графе
 
         # Генерируем номера узлов через хеши
-        u_node = self.ha(HashFunction.convert_to_int_key(k))
-        v_node = self.hb(HashFunction.convert_to_int_key(k))
+        u_node = self.ha(FastHash.convert_to_int_key(k))
+        v_node = self.hb(FastHash.convert_to_int_key(k))
+        self.metrics.inc("hash_calls_total")
+        self.metrics.inc("hash_calls_total")
+
         u_node_sig = "U_" + str(u_node)
         v_node_sig = "V_" + str(v_node)
 
@@ -395,7 +424,11 @@ class PogControl(HashAlgorithmBase):
         #if self.bloom_filter.check_is_not_in_filter(key):
         #    return None
 
-        u_node = self.ha(HashFunction.convert_to_int_key(key))
-        v_node = self.hb(HashFunction.convert_to_int_key(key))
+        int_key = HashFunction.convert_to_int_key(key)
+        u_node = self.ha(int_key)
+        v_node = self.hb(int_key)
+        self.metrics.inc("hash_calls_total")
+        self.metrics.inc("hash_calls_total")
+
         if self.graph.remove_edge(u_node, v_node):
             del self.table[key]

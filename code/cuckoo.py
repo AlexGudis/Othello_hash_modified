@@ -1,23 +1,53 @@
 import random, json
 from common import get_keys, generate_kv, Info, test_info, draw
 from abstracts import HashAlgorithmBase
+from random import randint
+from hash import FastHash
+from time import time
 
 class CuckooHash(HashAlgorithmBase):
-    def __init__(self, m=8):
+    def __init__(self, m=8, *, seed1=None, seed2=None):
         super().__init__()
-        self.m = m         # размер каждой из двух таблиц
-        self.n = 0                  # число элементов в структуре
+        self.m = m
+        self.n = 0
+
         self.t1 = [None] * self.m
         self.t2 = [None] * self.m
+
+        self.seed1 = random.getrandbits(64) if seed1 is None else seed1
+        self.seed2 = random.getrandbits(64) if seed2 is None else seed2
+
+        self._build_hashes()
+
+    def _build_hashes(self) -> None:
+        """Пересоздать хеш-функции под текущий размер таблиц."""
+        self._h1 = FastHash(self.seed1, self.m)
+        self._h2 = FastHash(self.seed2, self.m)
+
+    @staticmethod
+    def _key_to_int(key) -> int:
+        """Преобразовать ключ к integer для fast hash.
+
+        Поддерживаются:
+        - int
+        - str формата 'xx:xx:xx:xx:xx:xx-vlan'
+        """
+        if isinstance(key, int):
+            return key
+
+        if isinstance(key, str):
+            return FastHash.convert_to_int_key(key)
+
+        raise TypeError(f"Unsupported key type: {type(key)!r}")
 
     def __len__(self):
         return self.n
 
     def h1(self, key):
-        return hash(key) % self.m
+        return self._h1(self._key_to_int(key))
 
     def h2(self, key):
-        return hash(("x", key)) % self.m
+        return self._h2(self._key_to_int(key))
 
     def find(self, key):
         i = self.h1(key)
@@ -53,7 +83,7 @@ class CuckooHash(HashAlgorithmBase):
         if self.find(key) is not None:
             return False
 
-        # суммарная загрузка <= 0.5
+        # Суммарная загрузка <= 0.5
         if self.n >= self.m:
             self.resize(2 * self.m)
 
@@ -85,7 +115,7 @@ class CuckooHash(HashAlgorithmBase):
                 cur, self.t2[j] = self.t2[j], cur
                 table = 1
 
-        # если попали в цикл — увеличиваем таблицу и вставляем заново
+        # Если попали в цикл — увеличиваем таблицу и вставляем заново
         self.resize(2 * self.m)
         return self.insert(cur[0], cur[1])
 
@@ -105,6 +135,8 @@ class CuckooHash(HashAlgorithmBase):
         self.t2 = [None] * self.m
         self.n = 0
 
+        self._build_hashes()
+
         for key, value in old_items:
             self.insert(key, value)
 
@@ -122,7 +154,7 @@ if __name__ == '__main__':
     # Каждая таблица как размер всех текущих ключей
     cuko = CuckooHash(len(json_dict))
 
-    ready_to_insert = len(json_dict) % 7
+    ready_to_insert = len(json_dict)
     inserted = 0
     find_after = 0
 
@@ -139,5 +171,16 @@ if __name__ == '__main__':
     
     print(f'Correct is {find_after} of {ready_to_insert}')
     print(f'Final size is {len(cuko)}')
+
+    start_t = time()
+    for i in range(50_000):
+        cuko.find(keys[randint(1, len(keys) - 1)])
+    end_t = time()
+    print(f"Время поиска {end_t - start_t}")
+    
+
+
+
+
             
 
