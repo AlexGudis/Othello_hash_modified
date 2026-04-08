@@ -32,6 +32,133 @@ def make_insert_workload(size: int):
     return [("insert", *generate_kv()) for _ in range(size)]
 
 
+def make_real_workload(
+    initial_table,
+    *,
+    duration_sec: int,
+    find_rate: int = 250_000,
+    upsert_rate: int = 5_000,
+    insert_rate: int = 1,
+):
+    """
+    Генерирует mixed workload, близкий к реальному:
+    - много find
+    - много upsert (delete + insert того же ключа с новым значением)
+    - редкие insert новых уникальных ключей
+
+    Возвращает:
+    - ops: список операций в формате (op, key, value)
+    - meta: сводка по workload
+    """
+    current_table = dict(initial_table)
+    current_keys = list(current_table.keys())
+
+    find_count = int(find_rate * duration_sec)
+    upsert_count = int(upsert_rate * duration_sec)
+    insert_count = int(insert_rate * duration_sec)
+
+    op_kinds = (
+        ["find"] * find_count
+        + ["upsert"] * upsert_count
+        + ["insert_new"] * insert_count
+    )
+    random.shuffle(op_kinds)
+
+    ops = []
+
+    for kind in op_kinds:
+        if kind == "find":
+            key = random.choice(current_keys)
+            ops.append(("find", key, None))
+
+        elif kind == "upsert":
+            key = random.choice(current_keys)
+            old_value = current_table[key]
+
+            new_value = old_value
+            while new_value == old_value:
+                _, new_value = generate_kv()
+
+            current_table[key] = new_value
+            ops.append(("upsert", key, new_value))
+
+        elif kind == "insert_new":
+            while True:
+                key, value = generate_kv()
+                if key not in current_table:
+                    break
+
+            current_table[key] = value
+            current_keys.append(key)
+            ops.append(("insert", key, value))
+
+    meta = {
+        "duration_sec": duration_sec,
+        "find_rate": find_rate,
+        "upsert_rate": upsert_rate,
+        "insert_rate": insert_rate,
+        "find_count": find_count,
+        "upsert_count": upsert_count,
+        "insert_count": insert_count,
+        "logical_ops_total": len(ops),
+        "primitive_ops_total": find_count + 2 * upsert_count + insert_count,
+        "target_logical_ops_per_sec": find_rate + upsert_rate + insert_rate,
+        "target_primitive_ops_per_sec": find_rate + 2 * upsert_rate + insert_rate,
+    }
+
+    return ops, meta
+
+    
+
+
+def workload_file_path(dataset_dir: Path, n: int, avg_idx: int, profile_name: str) -> Path:
+    return dataset_dir / f"workload_{profile_name}_n{n}_avg{avg_idx}.json"
+
+
+def get_or_create_real_workload(
+    dataset_dir: Path,
+    initial_table,
+    n: int,
+    avg_idx: int,
+    *,
+    profile_name: str,
+    duration_sec: int,
+    find_rate: int,
+    upsert_rate: int,
+    insert_rate: int,
+):
+    path = workload_file_path(dataset_dir, n, avg_idx, profile_name)
+
+    if path.exists():
+        with path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        print(f"Загружен workload из файла: {path}")
+        return payload["ops"], payload["meta"]
+
+    ops, meta = make_real_workload(
+        initial_table,
+        duration_sec=duration_sec,
+        find_rate=find_rate,
+        upsert_rate=upsert_rate,
+        insert_rate=insert_rate,
+    )
+
+    payload = {
+        "ops": ops,
+        "meta": meta,
+    }
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    print(f"Сгенерирован workload: {path}")
+    return ops, meta
+
+        
+
+
+
 # ============================================================
 # 2. Приблизительная оценка памяти Python-объекта
 # ============================================================
@@ -77,8 +204,6 @@ class BenchmarkRunner:
     def run(self, algorithm, ops):
         algorithm.reset_metrics()
 
-        # print(f'AAAAAAAAAA = {algorithm.metrics_snapshot()["memory_count"]}')
-
         start = perf_counter()
 
         for op, key, value in ops:
@@ -88,6 +213,9 @@ class BenchmarkRunner:
                 algorithm.find(key)
             elif op == "delete":
                 algorithm.delete(key)
+            elif op == "upsert":
+                algorithm.delete(key)
+                algorithm.insert(key, value)
             else:
                 raise ValueError(f"Unknown operation: {op}")
 
@@ -286,6 +414,119 @@ def experiment(
         "hash_calls_delete": y_hash_calls_delete,
         "memory_count_delete": y_memory_counts_delete,
         # Проверка корректности поиска
+    }
+
+
+
+
+def experiment_realistic(
+    algorithm_factory,
+    sizes,
+    avg_factor,
+    *,
+    dataset_dir: Path,
+    duration_sec,
+    find_rate,
+    upsert_rate,
+    insert_rate,
+    measure_query_only=False,
+):
+    runner = BenchmarkRunner()
+
+    x_sizes = []
+    y_build_time = []
+    y_mixed_time = []
+    y_keep_up_ratio = []
+    y_memory_bytes = []
+    y_hash_calls_total = []
+    y_memory_count_total = []
+
+    profile_name = f"d{duration_sec}_f{find_rate}_u{upsert_rate}_i{insert_rate}"
+
+    for n in sizes:
+        total_build_time = 0.0
+        total_elapsed = 0.0
+        total_memory = 0
+        total_keep_up_ratio = 0.0
+        total_hash_calls_total = 0.0
+        total_memory_count_total = 0.0
+
+        for avg_idx in range(avg_factor):
+            default_table = get_or_create_table(dataset_dir, n, avg_idx)
+
+            ops, meta = get_or_create_real_workload(
+                dataset_dir=dataset_dir,
+                initial_table=default_table,
+                n=n,
+                avg_idx=avg_idx,
+                profile_name=profile_name,
+                duration_sec=duration_sec,
+                find_rate=find_rate,
+                upsert_rate=upsert_rate,
+                insert_rate=insert_rate,
+            )
+
+            algo, build_time = construct_structures(default_table, algorithm_factory)
+            run_results = runner.run(algo, ops)
+            elapsed = run_results["elapsed_sec"]
+
+            """
+            логических операций в секунду:
+
+            250000 + 5000 + 1 = 255001
+
+            примитивных операций в секунду:
+
+            250000 * 1 + 5000 * 2 + 1 * 1 = 260001
+
+            Потому что каждый upsert внутри стоит как две базовые команды.
+            """
+
+            logical_throughput = meta["logical_ops_total"] / elapsed
+            keep_up_ratio = logical_throughput / meta["target_logical_ops_per_sec"]
+
+            hash_calls_total = run_results.get("hash_calls_total", 0)
+            memory_count_total = run_results.get("memory_count", 0)
+
+            total_build_time += build_time
+            total_elapsed += elapsed
+            total_keep_up_ratio += keep_up_ratio
+            total_hash_calls_total += hash_calls_total
+            total_memory_count_total += memory_count_total
+
+            measured_obj = get_measured_object(algo, measure_query_only=measure_query_only)
+            total_memory += deep_getsizeof(measured_obj)
+
+        x_sizes.append(n)
+        y_build_time.append(total_build_time / avg_factor)
+        y_mixed_time.append(total_elapsed / avg_factor)
+        y_keep_up_ratio.append(total_keep_up_ratio / avg_factor)
+        y_memory_bytes.append(total_memory / avg_factor)
+        y_hash_calls_total.append(total_hash_calls_total / avg_factor)
+        y_memory_count_total.append(total_memory_count_total / avg_factor)
+
+        print(
+            f"N={n:6d} | "
+            f"mixed_time={y_mixed_time[-1]:.6f} sec | "
+            f"keep_up={y_keep_up_ratio[-1]:.2f}x"
+        )
+
+    return {
+        "sizes": x_sizes,
+        "build_time_sec": y_build_time,
+        "mixed_time_sec": y_mixed_time,
+        "keep_up_ratio": y_keep_up_ratio,
+        "memory_bytes": y_memory_bytes,
+        "hash_calls_total": y_hash_calls_total,
+        "memory_count_total": y_memory_count_total,
+        "profile": {
+            "duration_sec": duration_sec,
+            "find_rate": find_rate,
+            "upsert_rate": upsert_rate,
+            "insert_rate": insert_rate,
+            "target_logical_ops_per_sec": find_rate + upsert_rate + insert_rate,
+            "target_primitive_ops_per_sec": find_rate + 2 * upsert_rate + insert_rate,
+        },
     }
 
 
@@ -562,7 +803,7 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         title=f"Число вызовов хеш-функций при поиске",
         output_path=output_dir / f"hash_calls_find.png",
         x_log=False,
-        y_log=True,
+        y_log=False,
         annotate=True,
     )
 
@@ -613,6 +854,40 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
     )
 
 
+def build_realistic_plots(results_cuckoo, results_othello, output_dir: Path):
+    sizes = results_cuckoo["sizes"]
+
+    plots = [
+        ("build_time_sec", "Время построения структуры, сек", "Время построения структуры", "real_build_time.png", False, True),
+        ("mixed_time_sec", "Время выполнения смешанной нагрузки, сек", "Время выполнения", "real_mixed_time.png", False, False),
+        ("keep_up_ratio", "Запас по производительности", "Отношение числа выполненных операций к целевому в секунду", "real_keep_up_ratio.png", False, False),
+        ("memory_bytes", "Память, KiB", "Память итоговой структуры после смешанной нагрузки", "real_memory.png", False, True),
+        ("hash_calls_total", "Число вызовов хеш-функций", "Общее число вызовов хеш-функций", "real_hash_calls_total.png", False, False),
+        ("memory_count_total", "Число обращений к памяти", "Общее число обращений к памяти", "real_memory_count_total.png", False, False),
+    ]
+
+    for metric_key, ylabel, title, filename, x_log, y_log in plots:
+        series1 = results_cuckoo[metric_key]
+        series2 = results_othello[metric_key]
+
+        if metric_key == "memory_bytes":
+            series1 = [x / 1024 for x in series1]
+            series2 = [x / 1024 for x in series2]
+
+        plot_metric(
+            sizes,
+            series1,
+            series2,
+            label1="CuckooHash",
+            label2="Pog/Othello",
+            xlabel="Размер множества ключей",
+            ylabel=ylabel,
+            title=title,
+            output_path=output_dir / filename,
+            x_log=x_log,
+            y_log=y_log,
+            annotate=(metric_key not in {"hash_calls_total", "memory_count_total"}),
+        )
 # ============================================================
 # 9. Точка входа
 # ============================================================
@@ -620,41 +895,91 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
 if __name__ == "__main__":
     random.seed(42)
 
-    # sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
-    sizes = [1000, 2000, 4000, 10000]
-    avg_factor = 3
-    find_ops_count = 250_000
-    dataset_dir = Path("datasets")
-    output_dir = create_output_dir()
+    real = True
+    if not real:
+        # sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
+        sizes = [1000, 2000, 4000, 10000]
+        avg_factor = 3
+        find_ops_count = 250_000
+        dataset_dir = Path("datasets")
+        output_dir = create_output_dir()
 
-    results_cuckoo = experiment(
-        algorithm_factory=CuckooHash,
-        sizes=sizes,
-        avg_factor=avg_factor,
-        find_ops_count=find_ops_count,
-        delete_coeff=0.1,
-        measure_query_only=False,
-    )
+        results_cuckoo = experiment(
+            algorithm_factory=CuckooHash,
+            sizes=sizes,
+            avg_factor=avg_factor,
+            find_ops_count=find_ops_count,
+            delete_coeff=0.1,
+            measure_query_only=False,
+        )
 
-    results_othello = experiment(
-        algorithm_factory=PogControl,
-        sizes=sizes,
-        avg_factor=avg_factor,
-        find_ops_count=find_ops_count,
-        delete_coeff=0.1,
-        measure_query_only=True,
-    )
+        results_othello = experiment(
+            algorithm_factory=PogControl,
+            sizes=sizes,
+            avg_factor=avg_factor,
+            find_ops_count=find_ops_count,
+            delete_coeff=0.1,
+            measure_query_only=True,
+        )
 
-    save_json(results_cuckoo, output_dir / "results_cuckoo.json")
-    save_json(results_othello, output_dir / "results_pog_othello.json")
-    save_combined_csv(results_cuckoo, results_othello, output_dir / "combined_results.csv")
-    save_run_metadata(output_dir, sizes, avg_factor, find_ops_count)
+        save_json(results_cuckoo, output_dir / "results_cuckoo.json")
+        save_json(results_othello, output_dir / "results_pog_othello.json")
+        save_combined_csv(results_cuckoo, results_othello, output_dir / "combined_results.csv")
+        save_run_metadata(output_dir, sizes, avg_factor, find_ops_count)
 
-    build_all_plots(
-        results_cuckoo,
-        results_othello,
-        output_dir=output_dir,
-        find_ops_count=find_ops_count,
-    )
+        build_all_plots(
+            results_cuckoo,
+            results_othello,
+            output_dir=output_dir,
+            find_ops_count=find_ops_count,
+        )
 
-    print(f"\nРезультаты сохранены в папку: {output_dir}")
+        print(f"\nРезультаты сохранены в папку: {output_dir}")
+    else:
+        sizes = [30, 40, 50, 60]
+        avg_factor = 3
+        dataset_dir = Path("datasets")
+        output_dir = create_output_dir()
+
+        realistic_profile = {
+            "duration_sec": 2,
+            "find_rate": 240_000,
+            "upsert_rate": 2200,
+            "insert_rate": 1,
+        }
+
+        results_cuckoo_real = experiment_realistic(
+            algorithm_factory=CuckooHash,
+            sizes=sizes,
+            avg_factor=avg_factor,
+            dataset_dir=dataset_dir,
+            duration_sec=realistic_profile["duration_sec"],
+            find_rate=realistic_profile["find_rate"],
+            upsert_rate=realistic_profile["upsert_rate"],
+            insert_rate=realistic_profile["insert_rate"],
+            measure_query_only=False,
+        )
+
+        results_othello_real = experiment_realistic(
+            algorithm_factory=PogControl,
+            sizes=sizes,
+            avg_factor=avg_factor,
+            dataset_dir=dataset_dir,
+            duration_sec=realistic_profile["duration_sec"],
+            find_rate=realistic_profile["find_rate"],
+            upsert_rate=realistic_profile["upsert_rate"],
+            insert_rate=realistic_profile["insert_rate"],
+            measure_query_only=True,
+        )
+
+        save_json(results_cuckoo_real, output_dir / "results_cuckoo_realistic.json")
+        save_json(results_othello_real, output_dir / "results_pog_realistic.json")
+        save_json(realistic_profile, output_dir / "realistic_profile.json")
+
+        build_realistic_plots(
+            results_cuckoo_real,
+            results_othello_real,
+            output_dir=output_dir,
+        )
+
+        print(f"\nРезультаты реального эксперимента сохранены в папку: {output_dir}")

@@ -23,15 +23,22 @@ def log(msg: str) -> None:
     print(f"[plot_results] {msg}", file=sys.stderr)
 
 
-def add_mean_line(values, *, color="red", linestyle="--", linewidth=1.5, label_prefix="Среднее"):
-    mean_value = values.mean()
-    plt.axhline(
+def add_trimmed_mean_line(ax, series, *, trim_left=1, trim_right=1,
+                          color="red", linestyle="--", linewidth=1.5,
+                          label_prefix="Среднее"):
+    if len(series) > trim_left + trim_right:
+        mean_value = series.iloc[trim_left: len(series) - trim_right].mean()
+    else:
+        mean_value = series.mean()
+
+    ax.axhline(
         mean_value,
         color=color,
         linestyle=linestyle,
         linewidth=linewidth,
         label=f"{label_prefix}: {mean_value:.2f}",
     )
+    return mean_value
 
 
 def decode_key_u64(key: int) -> tuple[int, int]:
@@ -194,6 +201,7 @@ def main() -> None:
 
             total_events += 1
 
+        
         break
 
     if global_min_sec is None or global_max_sec is None:
@@ -326,16 +334,17 @@ def main() -> None:
     plt.close()
 
     # 5. Запросы в секунду = find/sec
-    plt.figure(figsize=(14, 5))
-    plt.step(df_requests_sec["datetime"], df_requests_sec["requests"], where="post")
-    # add_mean_line(df_requests_sec["datetime"])
-    plt.xlabel("Время, с")
-    plt.ylabel("Операции поиска")
-    plt.title("Число операций поиска в секунду")
+    fig, ax = plt.subplots(figsize=(14, 5))
+    ax.step(df_requests_sec["datetime"], df_requests_sec["requests"], where="post", label="requests/sec")
+    add_trimmed_mean_line(ax, df_requests_sec["requests"], trim_left=1, trim_right=1)
+    ax.set_xlabel("Время, с")
+    ax.set_ylabel("Операции поиска")
+    ax.set_title("Число операций поиска в секунду")
     plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.savefig(plots_dir / "requests_per_sec.png", dpi=150)
-    plt.close()
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(plots_dir / "requests_per_sec.png", dpi=150)
+    plt.close(fig)
 
     # 6. Запросы в 5 секунд = find/5sec
     plt.figure(figsize=(14, 5))
@@ -349,16 +358,17 @@ def main() -> None:
     plt.close()
 
     # Новые правила в секунду
-    plt.figure(figsize=(14, 5))
-    plt.step(df_new_triples_sec["datetime"], df_new_triples_sec["new_triples"], where="post")
-    # add_mean_line(df_new_triples_sec["datetime"])
-    plt.xlabel("Время, с")
-    plt.ylabel("Новые правила")
-    plt.title("Число появление новых правил в секунду. Операция upsert")
+    fig, ax = plt.subplots(figsize=(14, 5))
+    ax.step(df_new_triples_sec["datetime"], df_new_triples_sec["new_triples"], where="post", label="requests/sec")
+    add_trimmed_mean_line(ax, df_new_triples_sec["new_triples"], trim_left=1, trim_right=1)
+    ax.set_xlabel("Время, с")
+    ax.set_ylabel("Новые правила")
+    ax.set_title("Число появление новых правил в секунду. Операция upsert")
     plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.savefig(plots_dir / "new_triples_per_sec.png", dpi=150)
-    plt.close()
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(plots_dir / "new_triples_per_sec.png", dpi=150)
+    plt.close(fig)
 
 
     # Новые правила в 5 секунд
