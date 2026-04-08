@@ -424,7 +424,7 @@ class PogControl(HashAlgorithmBase):
         #if self.bloom_filter.check_is_not_in_filter(key):
         #    return None
 
-        int_key = HashFunction.convert_to_int_key(key)
+        int_key = FastHash.convert_to_int_key(key)
         u_node = self.ha(int_key)
         v_node = self.hb(int_key)
         self.metrics.inc("hash_calls_total")

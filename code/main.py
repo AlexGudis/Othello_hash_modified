@@ -2,6 +2,7 @@ import json
 from pog_mod import PogControl
 from time import time
 from common import generate_kv
+from random import randint
 
 def test_correct(oth, json_dict, keys):
     cnt = 0
@@ -34,16 +35,19 @@ cnt = test_correct(pog, json_dict, keys)
 print(f'Correct is {cnt} of {len(json_dict)}')
 
 start_t = time()
-for i in range(10):
+for i in range(int(n * 0.1)):
     k, v = generate_kv()
     pog.insert(k, v)
     # pog.delete(k)
     json_dict[k] = v
+    # pog.find(keys[randint(1, len(json_dict) - 1)])
 end_t = time()
 
 keys, values = get_keys(json_dict)
 cnt = test_correct(pog, json_dict, keys)
 print(f'Correct is {cnt} of {len(json_dict)}')
-print(f"Time spent: {(end_t - start_t) / 10}")
+print(f"Time spent: {(end_t - start_t)}")
+
+print(pog.find("1-2"))
 
 

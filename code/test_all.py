@@ -203,7 +203,7 @@ def experiment(
 # 6. Сохранение результатов
 # ============================================================
 
-def create_output_dir(base_dir="benchmark_results"):
+def create_output_dir(base_dir="test_results"):
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = Path(base_dir) / run_id
     output_dir.mkdir(parents=True, exist_ok=True)
