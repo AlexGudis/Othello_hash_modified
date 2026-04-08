@@ -1,0 +1,7 @@
+total_events	12185452
+unique_pairs	60
+unique_triples	65564
+max_requests_per_sec	270508
+max_requests_per_5sec	1246927
+max_new_pairs_per_sec	53
+max_new_pairs_per_5sec	57

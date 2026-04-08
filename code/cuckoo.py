@@ -1,5 +1,5 @@
 import random, json
-from common import get_keys, generate_kv, Info, test_info, draw
+from common import get_keys
 from abstracts import HashAlgorithmBase
 from random import randint
 from hash import FastHash
@@ -52,11 +52,13 @@ class CuckooHash(HashAlgorithmBase):
     def find(self, key):
         i = self.h1(key)
         self.metrics.inc("hash_calls_total")
+        self.metrics.inc("memory_count")
         if self.t1[i] is not None and self.t1[i][0] == key:
             return self.t1[i][1]
 
         j = self.h2(key)
         self.metrics.inc("hash_calls_total")
+        self.metrics.inc("memory_count")
         if self.t2[j] is not None and self.t2[j][0] == key:
             return self.t2[j][1]
 
@@ -65,6 +67,7 @@ class CuckooHash(HashAlgorithmBase):
     def delete(self, key):
         i = self.h1(key)
         self.metrics.inc("hash_calls_total")
+        self.metrics.inc("memory_count")
         if self.t1[i] is not None and self.t1[i][0] == key:
             self.t1[i] = None
             self.n -= 1
@@ -72,6 +75,7 @@ class CuckooHash(HashAlgorithmBase):
 
         j = self.h2(key)
         self.metrics.inc("hash_calls_total")
+        self.metrics.inc("memory_count")
         if self.t2[j] is not None and self.t2[j][0] == key:
             self.t2[j] = None
             self.n -= 1
@@ -94,24 +98,30 @@ class CuckooHash(HashAlgorithmBase):
             if table == 1:
                 i = self.h1(cur[0])
                 self.metrics.inc("hash_calls_total")
+                self.metrics.inc("memory_count")
 
                 if self.t1[i] is None:
+                    self.metrics.inc("memory_count")
                     self.t1[i] = cur
                     self.n += 1
                     return True
 
+                self.metrics.inc("memory_count")
                 cur, self.t1[i] = self.t1[i], cur
                 table = 2
 
             else:
                 j = self.h2(cur[0])
                 self.metrics.inc("hash_calls_total")
+                self.metrics.inc("memory_count")
 
                 if self.t2[j] is None:
+                    self.metrics.inc("memory_count")
                     self.t2[j] = cur
                     self.n += 1
                     return True
 
+                self.metrics.inc("memory_count")
                 cur, self.t2[j] = self.t2[j], cur
                 table = 1
 
@@ -122,11 +132,14 @@ class CuckooHash(HashAlgorithmBase):
     def resize(self, new_m):
         old_items = []
 
+        # Пробегаемся по всем элементам наших таблиц, каждый требует обращения к памяти
         for x in self.t1:
+            self.metrics.inc("memory_count")
             if x is not None:
                 old_items.append(x)
 
         for x in self.t2:
+            self.metrics.inc("memory_count")
             if x is not None:
                 old_items.append(x)
 

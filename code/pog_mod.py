@@ -174,9 +174,12 @@ class PogControl(HashAlgorithmBase):
     def find(self, key: str):
         """Found a value (dest port) for key in MAC-VLAN table"""
         # Делаем "запрос" к query структуре для операции поиска
-        # Число вызовов хеш-функций увеливаем на 2
+        # Число вызовов хеш-функций увеливаем на 2, аналогично с памятью
         self.metrics.inc("hash_calls_total")
         self.metrics.inc("hash_calls_total")
+
+        self.metrics.inc("memory_count")
+        self.metrics.inc("memory_count")
         return self._query.find(key)
     
 
@@ -226,6 +229,9 @@ class PogControl(HashAlgorithmBase):
             t_k = hash_mapping[(u_ind, v_ind)]
 
             if u_mark not in computed_vertexes and v_mark not in computed_vertexes:
+                self.metrics.inc("memory_count")
+                self.metrics.inc("memory_count")
+
                 self.set_value(self.a, u_ind, 0)
                 self.set_value(self.b, v_ind, t_k)
 
@@ -234,12 +240,16 @@ class PogControl(HashAlgorithmBase):
 
             elif u_mark not in computed_vertexes:
                 b_value = self.get_value(self.b, v_ind)
+
+                self.metrics.inc("memory_count")
                 self.set_value(self.a, u_ind, b_value ^ t_k)
 
                 computed_vertexes.add(u_mark)
 
             elif v_mark not in computed_vertexes:
                 a_value = self.get_value(self.a, u_ind)
+
+                self.metrics.inc("memory_count")
                 self.set_value(self.b, v_ind, a_value ^ t_k)
                 
                 computed_vertexes.add(v_mark)
@@ -324,6 +334,8 @@ class PogControl(HashAlgorithmBase):
         # 1. Выбираем наименьшую компоненту связности, если соединяются различные
         # 2. Обходим по DFS всю компоненту и перекрашвиаем её
 
+        self.metrics.inc("memory_count")
+        self.metrics.inc("memory_count")
         a_value = self.get_value(self.a, u_node)
         b_value = self.get_value(self.b, v_node)
 
@@ -336,6 +348,9 @@ class PogControl(HashAlgorithmBase):
             self.set_value(self.a, u_node, 0)
             self.set_value(self.b, v_node, int(value))
 
+            self.metrics.inc("memory_count")
+            self.metrics.inc("memory_count")
+
             # обновляем таблицу на control structure и публикуем новую query 
             self.table |= {k: value}
             self._publish_query()
@@ -343,6 +358,7 @@ class PogControl(HashAlgorithmBase):
         if u_node_sig not in old_vertexes:
             # В текущей компоненте связности появляется вершина u, которая ранее в ней не была => можем вычислить значение
             self.set_value(self.a, u_node, b_value ^ int(value))
+            self.metrics.inc("memory_count")
             
             # обновляем таблицу на control structure и публикуем новую query 
             self.table |= {k: value}
@@ -351,6 +367,7 @@ class PogControl(HashAlgorithmBase):
         if v_node_sig not in old_vertexes:
             # В текущей компоненте связности появляется вершина v, которая ранее в ней не была => можем вычислить значение
             self.set_value(self.b, v_node, a_value ^ int(value))
+            self.metrics.inc("memory_count")
             
             # обновляем таблицу на control structure и публикуем новую query 
             self.table |= {k: value}
@@ -393,6 +410,8 @@ class PogControl(HashAlgorithmBase):
                         v_ind = int(u.split('_')[1])
                         change = True
 
+                    self.metrics.inc("memory_count")
+                    self.metrics.inc("memory_count")
                     a_value = self.get_value(self.a, u_ind)
                     b_value = self.get_value(self.b, v_ind)
 
@@ -403,8 +422,10 @@ class PogControl(HashAlgorithmBase):
                         # Перекрашиваем ту вершину, которая ещё не в visited
                         if not change:
                             self.set_value(self.a, u_ind, b_value ^ self.graph.adj_list[(u_ind, v_ind)])
+                            self.metrics.inc("memory_count")
                         else:
                             self.set_value(self.b, v_ind, a_value ^ self.graph.adj_list[(u_ind, v_ind)])
+                            self.metrics.inc("memory_count")
                     dfs(u, component_number)
 
         # Предположительно обход одной компоненты связности не приводит к сильному ускорению работы алгоритма
