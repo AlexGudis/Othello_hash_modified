@@ -18,6 +18,7 @@ class HashMetrics:
     def reset(self) -> None:
         self.counters = {
             "hash_calls_total": 0,
+            "memory_count": 0,
         }
 
 

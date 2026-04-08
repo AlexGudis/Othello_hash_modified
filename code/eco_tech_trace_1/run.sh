@@ -5,7 +5,7 @@ set -euo pipefail
 # Configuration
 # =========================
 START_IDX="002"
-END_IDX="003"
+END_IDX="117"
 FNAME_PREFIX="dump_2025-07-02_00-41-04.pcap"
 SHARE_URL_PREFIX="https://cloud.asvk.cs.msu.ru/s/3QobqzkfJfWZGLy/download?path=%2F&files="
 

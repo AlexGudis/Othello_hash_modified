@@ -23,6 +23,10 @@ def make_find_workload(existing_keys, size: int):
     return [("find", random.choice(existing_keys), None) for _ in range(size)]
 
 
+def make_delete_workload(existing_keys, size: int):
+    return [("delete", random.choice(existing_keys), None) for _ in range(size)]
+
+
 def make_insert_workload(size: int):
     return [("insert", *generate_kv()) for _ in range(size)]
 
@@ -71,6 +75,8 @@ def deep_getsizeof(obj, seen=None):
 class BenchmarkRunner:
     def run(self, algorithm, ops):
         algorithm.reset_metrics()
+
+        # print(f'AAAAAAAAAA = {algorithm.metrics_snapshot()["memory_count"]}')
 
         start = perf_counter()
 
@@ -160,6 +166,7 @@ def experiment(
     sizes,
     avg_factor,
     find_ops_count,
+    delete_coeff,
     *,
     measure_query_only=False,
 ):
@@ -173,6 +180,9 @@ def experiment(
     y_memory_counts_construction = []
 
     y_hash_calls_find = []
+    y_memory_counts_find = []
+
+    y_hash_calls_delete = []
 
 
     for n in sizes:
@@ -181,7 +191,11 @@ def experiment(
         total_construct_time = 0.0
         total_hash_calls_construct = 0
         total_memory_counts_construction = 0
+        
         total_hash_calls_find = 0
+        total_memory_counts_find = 0
+
+        total_hash_calls_delete = 0
 
         for avg_idx in range(avg_factor):
             # Сейчас получается, что Отелло и Кукушкин хеш тестируются на самом деле на разных таблицах
@@ -195,14 +209,12 @@ def experiment(
             algo, build_time = construct_structures(default_table, algorithm_factory)
             total_hash_calls_construct += algo.metrics_snapshot()["hash_calls_total"]
             total_memory_counts_construction += algo.metrics_snapshot()["memory_count"]
-            
             # Время построения структуры
             total_construct_time += build_time
+            
 
 
-            # Сброс метрик для следующих тестов
-            algo.metrics.reset()
-
+            # Тестирование операции find
             # Время заданного числа операций поиска (Ключ присутствует)
             # TODO: корректность операций поиска (Важно для Отелло)
             find_ops = make_find_workload(list(default_table.keys()), find_ops_count)
@@ -210,6 +222,14 @@ def experiment(
             find_results = runner.run(algo, find_ops)
             total_find_time += find_results["elapsed_sec"]
             total_hash_calls_find += find_results["hash_calls_total"]
+            total_memory_counts_find += find_results["memory_count"]
+
+
+
+            # Тестирование операции delete
+            delete_ops = make_delete_workload(list(default_table.keys()), int(n * delete_coeff))
+            delete_results = runner.run(algo, delete_ops)
+            total_hash_calls_delete += delete_results["hash_calls_total"]
 
             # Объём занимаемой памяти
             measured_obj = get_measured_object(algo, measure_query_only=measure_query_only)
@@ -217,18 +237,29 @@ def experiment(
 
         avg_find_time = total_find_time / avg_factor
         avg_memory = total_memory / avg_factor
+
         avg_structure_construction_time = total_construct_time / avg_factor
         avg_hash_calls_construct = total_hash_calls_construct / avg_factor
         avg_memory_counts_construction = total_memory_counts_construction / avg_factor
-        avg_hash_calls_find = total_hash_calls_find / avg_factor
+
+        # Нас интересует число вызовов хеш-функций на одну операцию, а не на какое-то их количество
+        avg_hash_calls_find = total_hash_calls_find / avg_factor / find_ops_count
+        avg_memory_counts_find = total_memory_counts_find / avg_factor / find_ops_count
+
+        avg_hash_calls_delete = total_hash_calls_delete / avg_factor / int(n * delete_coeff)
 
         x_sizes.append(n)
         y_find_time.append(avg_find_time)
         y_memory_bytes.append(avg_memory)
+
         y_structure_construction_time.append(avg_structure_construction_time)
         y_hash_calls_construction.append(avg_hash_calls_construct)
         y_memory_counts_construction.append(avg_memory_counts_construction)
+
         y_hash_calls_find.append(avg_hash_calls_find)
+        y_memory_counts_find.append(avg_memory_counts_find)
+
+        y_hash_calls_delete.append(avg_hash_calls_delete)
 
         print(
             f"N={n:6d} | "
@@ -245,6 +276,8 @@ def experiment(
         "hash_call_construction": y_hash_calls_construction,
         "memory_count_construction": y_memory_counts_construction,
         "hash_calls_find": y_hash_calls_find,
+        "memory_count_find": y_memory_counts_find,
+        "hash_calls_delete": y_hash_calls_delete,
         # Проверка корректности поиска
     }
 
@@ -369,7 +402,7 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         label2="Pog/Othello",
         xlabel="Размер множества ключей",
         ylabel="Время серии find-операций, сек",
-        title=f"Сравнение времени {find_ops_count} операций поиска",
+        title=f"Время {find_ops_count} операций поиска",
         output_path=output_dir / f"find_time.png",
         x_log=False,
         y_log=False,
@@ -383,7 +416,7 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         label2="Pog/Othello",
         xlabel="Размер множества ключей",
         ylabel="Память, KiB",
-        title="Сравнение занимаемой памяти",
+        title="Объём занимаемой памяти",
         output_path=output_dir / f"memory.png",
         x_log=False,
         y_log=True,
@@ -397,7 +430,7 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         label2="Pog/Othello",
         xlabel="Размер множества ключей",
         ylabel="Время построения структуры, сек",
-        title="Сравнение времени построения структуры",
+        title="Время построения структуры",
         output_path=output_dir / f"construction_time.png",
         x_log=False,
         y_log=False,
@@ -412,7 +445,7 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         label2="Pog/Othello",
         xlabel="Размер множества ключей",
         ylabel="Число вызовов хеш-функций",
-        title="Сравнение числа вызовов хеш-функций во время построения",
+        title="Число вызовов хеш-функций во время построения",
         output_path=output_dir / f"hash_calls_construct.png",
         x_log=False,
         y_log=False,
@@ -426,7 +459,7 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         label2="Pog/Othello",
         xlabel="Размер множества ключей",
         ylabel="Число обращений к памяти",
-        title="Сравнение числа обращений к памяти во время построения",
+        title="Число обращений к памяти во время построения",
         output_path=output_dir / f"memory_count_construction.png",
         x_log=False,
         y_log=False,
@@ -440,8 +473,39 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         label2="Pog/Othello",
         xlabel="Размер множества ключей",
         ylabel="Число вызовов хеш-функций",
-        title=f"Сравнение числа вызовов хеш-функций во время {find_ops_count} операций поиска",
+        title=f"Число вызовов хеш-функций при поиске",
         output_path=output_dir / f"hash_calls_find.png",
+        x_log=False,
+        y_log=False,
+    )
+
+
+    plot_metric(
+        sizes,
+        results_cuckoo["memory_count_find"],
+        results_othello["memory_count_find"],
+        label1="CuckooHash",
+        label2="Pog/Othello",
+        xlabel="Размер множества ключей",
+        ylabel="Число обращений к памяти",
+        title=f"Число обращений к памяти при поиске",
+        output_path=output_dir / f"memory_count_find.png",
+        x_log=False,
+        y_log=False,
+    )
+
+    
+
+    plot_metric(
+        sizes,
+        results_cuckoo["hash_calls_delete"],
+        results_othello["hash_calls_delete"],
+        label1="CuckooHash",
+        label2="Pog/Othello",
+        xlabel="Размер множества ключей",
+        ylabel="Число вызовов хеш-функций",
+        title=f"Число вызовов хеш-функций при удалении",
+        output_path=output_dir / f"hash_calls_delete.png",
         x_log=False,
         y_log=False,
     )
@@ -466,6 +530,7 @@ if __name__ == "__main__":
         sizes=sizes,
         avg_factor=avg_factor,
         find_ops_count=find_ops_count,
+        delete_coeff=0.1,
         measure_query_only=False,
     )
 
@@ -474,6 +539,7 @@ if __name__ == "__main__":
         sizes=sizes,
         avg_factor=avg_factor,
         find_ops_count=find_ops_count,
+        delete_coeff=0.1,
         measure_query_only=True,
     )
 
