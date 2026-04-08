@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from common import generate_kv
 from cuckoo import CuckooHash
 from pog_mod import PogControl
+import numpy as np
 
 
 # ============================================================
@@ -183,6 +184,7 @@ def experiment(
     y_memory_counts_find = []
 
     y_hash_calls_delete = []
+    y_memory_counts_delete = []
 
 
     for n in sizes:
@@ -196,6 +198,7 @@ def experiment(
         total_memory_counts_find = 0
 
         total_hash_calls_delete = 0
+        total_memory_counts_delete = 0
 
         for avg_idx in range(avg_factor):
             # Сейчас получается, что Отелло и Кукушкин хеш тестируются на самом деле на разных таблицах
@@ -230,6 +233,7 @@ def experiment(
             delete_ops = make_delete_workload(list(default_table.keys()), int(n * delete_coeff))
             delete_results = runner.run(algo, delete_ops)
             total_hash_calls_delete += delete_results["hash_calls_total"]
+            total_memory_counts_delete += delete_results["memory_count"]
 
             # Объём занимаемой памяти
             measured_obj = get_measured_object(algo, measure_query_only=measure_query_only)
@@ -247,6 +251,7 @@ def experiment(
         avg_memory_counts_find = total_memory_counts_find / avg_factor / find_ops_count
 
         avg_hash_calls_delete = total_hash_calls_delete / avg_factor / int(n * delete_coeff)
+        avg_memory_counts_delete = total_memory_counts_delete / avg_factor / int(n * delete_coeff)
 
         x_sizes.append(n)
         y_find_time.append(avg_find_time)
@@ -260,6 +265,7 @@ def experiment(
         y_memory_counts_find.append(avg_memory_counts_find)
 
         y_hash_calls_delete.append(avg_hash_calls_delete)
+        y_memory_counts_delete.append(avg_memory_counts_delete)
 
         print(
             f"N={n:6d} | "
@@ -278,6 +284,7 @@ def experiment(
         "hash_calls_find": y_hash_calls_find,
         "memory_count_find": y_memory_counts_find,
         "hash_calls_delete": y_hash_calls_delete,
+        "memory_count_delete": y_memory_counts_delete,
         # Проверка корректности поиска
     }
 
@@ -338,6 +345,34 @@ def save_run_metadata(output_dir: Path, sizes, avg_factor, find_ops_count):
 # ============================================================
 # 7. Универсальные настройки графиков
 # ============================================================
+def apply_tight_ylim(ax, values, *, y_log=False, pad_ratio=0.08):
+    vals = [float(v) for v in values if v is not None]
+
+    if not vals:
+        return
+
+    vmin = min(vals)
+    vmax = max(vals)
+
+    if y_log:
+        positive_vals = [v for v in vals if v > 0]
+        if not positive_vals:
+            return
+        vmin = min(positive_vals)
+        vmax = max(positive_vals)
+
+        if vmin == vmax:
+            ax.set_ylim(vmin / 1.2, vmax * 1.2)
+        else:
+            ax.set_ylim(vmin / (1 + pad_ratio), vmax * (1 + pad_ratio))
+    else:
+        if vmin == vmax:
+            pad = max(abs(vmin) * pad_ratio, 0.05)
+        else:
+            pad = (vmax - vmin) * pad_ratio
+
+        ax.set_ylim(vmin - pad, vmax + pad)
+
 
 def apply_axis_scales(ax, *, x_log=False, y_log=False):
     if x_log:
@@ -368,7 +403,43 @@ def plot_metric(
     output_path,
     x_log=False,
     y_log=False,
+    tight_y=False,
+    y_pad_ratio=0.08,
+    annotate=False,
+    kind="line",   # "line" или "heatmap"
+    cmap="viridis",
 ):
+    if kind == "heatmap":
+        data = np.array([series1, series2], dtype=float)
+
+        fig, ax = plt.subplots(figsize=(max(7, len(sizes) * 1.2), 2.8))
+        im = ax.imshow(data, aspect="auto", cmap=cmap)
+
+        ax.set_yticks([0, 1])
+        ax.set_yticklabels([label1, label2])
+
+        ax.set_xticks(range(len(sizes)))
+        ax.set_xticklabels(sizes)
+
+        ax.set_xlabel(xlabel)
+        ax.set_title(title)
+
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.set_label(ylabel)
+
+        if annotate:
+            mean_val = float(np.mean(data))
+            for i in range(data.shape[0]):
+                for j in range(data.shape[1]):
+                    value = data[i, j]
+                    color = "white" if value > mean_val else "black"
+                    ax.text(j, i, f"{value:.3g}", ha="center", va="center", color=color, fontsize=9)
+
+        fig.tight_layout()
+        fig.savefig(output_path, dpi=200, bbox_inches="tight")
+        plt.close(fig)
+        return
+
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.plot(sizes, series1, marker="o", label=label1)
     ax.plot(sizes, series2, marker="o", label=label2)
@@ -381,6 +452,21 @@ def plot_metric(
         x_log=x_log,
         y_log=y_log,
     )
+
+    if tight_y:
+        apply_tight_ylim(
+            ax,
+            list(series1) + list(series2),
+            y_log=y_log,
+            pad_ratio=y_pad_ratio,
+        )
+
+    if annotate:
+        for x, y in zip(sizes, series1):
+            ax.annotate(f"{y:.3g}", (x, y), textcoords="offset points", xytext=(0, 6), ha="center", fontsize=8)
+
+        for x, y in zip(sizes, series2):
+            ax.annotate(f"{y:.3g}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
@@ -403,7 +489,7 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         xlabel="Размер множества ключей",
         ylabel="Время серии find-операций, сек",
         title=f"Время {find_ops_count} операций поиска",
-        output_path=output_dir / f"find_time.png",
+        output_path=output_dir / f"time_find.png",
         x_log=False,
         y_log=False,
     )
@@ -431,7 +517,7 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         xlabel="Размер множества ключей",
         ylabel="Время построения структуры, сек",
         title="Время построения структуры",
-        output_path=output_dir / f"construction_time.png",
+        output_path=output_dir / f"time_construction.png",
         x_log=False,
         y_log=False,
     )
@@ -476,7 +562,8 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         title=f"Число вызовов хеш-функций при поиске",
         output_path=output_dir / f"hash_calls_find.png",
         x_log=False,
-        y_log=False,
+        y_log=True,
+        annotate=True,
     )
 
 
@@ -506,6 +593,21 @@ def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_
         ylabel="Число вызовов хеш-функций",
         title=f"Число вызовов хеш-функций при удалении",
         output_path=output_dir / f"hash_calls_delete.png",
+        x_log=False,
+        y_log=False,
+    )
+
+
+    plot_metric(
+        sizes,
+        results_cuckoo["memory_count_delete"],
+        results_othello["memory_count_delete"],
+        label1="CuckooHash",
+        label2="Pog/Othello",
+        xlabel="Размер множества ключей",
+        ylabel="Число обращений к памяти",
+        title=f"Число обращений к памяти при удалении",
+        output_path=output_dir / f"memory_count_delete.png",
         x_log=False,
         y_log=False,
     )
