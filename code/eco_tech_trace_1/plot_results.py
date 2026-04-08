@@ -10,6 +10,7 @@ from typing import Iterator, Tuple
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import json
 
 
 # Формат события из test1.cpp:
@@ -20,6 +21,38 @@ import matplotlib.pyplot as plt
 
 def log(msg: str) -> None:
     print(f"[plot_results] {msg}", file=sys.stderr)
+
+
+def add_mean_line(values, *, color="red", linestyle="--", linewidth=1.5, label_prefix="Среднее"):
+    mean_value = values.mean()
+    plt.axhline(
+        mean_value,
+        color=color,
+        linestyle=linestyle,
+        linewidth=linewidth,
+        label=f"{label_prefix}: {mean_value:.2f}",
+    )
+
+
+def decode_key_u64(key: int) -> tuple[int, int]:
+    vlan = key & 0xFFF
+    dst_mac = key >> 12
+    return dst_mac, vlan
+
+
+def mac_to_str(mac: int) -> str:
+    return ":".join(f"{(mac >> shift) & 0xFF:02x}" for shift in range(40, -1, -8))
+
+
+def save_unique_triples_json(triple_first_us: dict[tuple[int, int], int], path: Path) -> None:
+    dataset = {}
+
+    for (key, port), first_us in sorted(triple_first_us.items(), key=lambda x: (x[0][0], x[0][1])):
+        dst_mac, vlan = decode_key_u64(key)
+        dataset[mac_to_str(dst_mac) + '-' + str(vlan)] = port
+
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(dataset, f, ensure_ascii=False, indent=2)
 
 
 def open_event_stream(path: Path) -> Iterator[Tuple[int, int, int]]:
@@ -161,6 +194,8 @@ def main() -> None:
 
             total_events += 1
 
+        break
+
     if global_min_sec is None or global_max_sec is None:
         raise RuntimeError("No events found in input files")
 
@@ -180,10 +215,13 @@ def main() -> None:
 
     # New triples per time bucket -> для cumulative_unique_triples
     new_triples_per_sec = Counter()
+    new_triples_per_5sec = Counter()
 
     for first_us in triple_first_us.values():
         sec = first_us // 1_000_000
+        sec5 = (sec // 5) * 5
         new_triples_per_sec[sec] += 1
+        new_triples_per_5sec[sec5] += 1
 
     # Dense tables
     df_requests_sec = sparse_counter_to_dense_df(
@@ -200,6 +238,13 @@ def main() -> None:
         new_pairs_per_5sec, (global_min_sec // 5) * 5, (global_max_sec // 5) * 5, 5, "new_pairs"
     )
 
+    df_new_triples_sec = sparse_counter_to_dense_df(
+        new_triples_per_sec, global_min_sec, global_max_sec, 1, "new_triples"
+    )
+    df_new_triples_5sec = sparse_counter_to_dense_df(
+        new_triples_per_5sec, (global_min_sec // 5) * 5, (global_max_sec // 5) * 5, 5, "new_triples"
+    )
+
     df_cum_pairs = cumulative_from_new_counts(
         new_pairs_per_sec, global_min_sec, global_max_sec, 1, "cumulative_unique_pairs"
     )
@@ -212,6 +257,8 @@ def main() -> None:
     save_tsv(df_cum_triples, out_dir / "cumulative_unique_triples.tsv", ["cumulative_unique_triples"])
     save_tsv(df_new_pairs_sec, out_dir / "new_pairs_per_sec.tsv", ["new_pairs"])
     save_tsv(df_new_pairs_5sec, out_dir / "new_pairs_per_5sec.tsv", ["new_pairs"])
+    save_tsv(df_new_triples_sec, out_dir / "new_triples_per_sec.tsv", ["new_triples"])
+    save_tsv(df_new_triples_5sec, out_dir / "new_triples_per_5sec.tsv", ["new_triples"])
     save_tsv(df_requests_sec, out_dir / "requests_per_sec.tsv", ["requests"])
     save_tsv(df_requests_5sec, out_dir / "requests_per_5sec.tsv", ["requests"])
 
@@ -225,6 +272,12 @@ def main() -> None:
         f.write(f"max_requests_per_5sec\t{int(df_requests_5sec['requests'].max()) if not df_requests_5sec.empty else 0}\n")
         f.write(f"max_new_pairs_per_sec\t{int(df_new_pairs_sec['new_pairs'].max()) if not df_new_pairs_sec.empty else 0}\n")
         f.write(f"max_new_pairs_per_5sec\t{int(df_new_pairs_5sec['new_pairs'].max()) if not df_new_pairs_5sec.empty else 0}\n")
+        f.write(f"max_new_triples_per_sec\t{int(df_new_triples_sec['new_triples'].max()) if not df_new_triples_sec.empty else 0}\n")
+        f.write(f"max_new_triples_per_5sec\t{int(df_new_triples_5sec['new_triples'].max()) if not df_new_triples_5sec.empty else 0}\n")
+
+    # Генерация датасета
+    unique_triples_json_path = out_dir / "real_dataset.json"
+    save_unique_triples_json(triple_first_us, unique_triples_json_path)
 
     # Plots
 
@@ -255,7 +308,7 @@ def main() -> None:
     plt.step(df_new_pairs_sec["datetime"], df_new_pairs_sec["new_pairs"], where="post")
     plt.xlabel("Время, с")
     plt.ylabel("Новые ключи")
-    plt.title("Число операций вставок в секунду: новые ключи (dst_MAC, VLAN)")
+    plt.title("Частота появления новых ключей в секунду. Операция insert")
     plt.xticks(rotation=45)
     plt.tight_layout()
     plt.savefig(plots_dir / "new_pairs_per_sec.png", dpi=150)
@@ -266,7 +319,7 @@ def main() -> None:
     plt.step(df_new_pairs_5sec["datetime"], df_new_pairs_5sec["new_pairs"], where="post")
     plt.xlabel("Время, с")
     plt.ylabel("Новые ключи")
-    plt.title("Число операций вставок в 5 секунд: новые ключи (dst_MAC, VLAN)")
+    plt.title("Частота появления новых ключей в 5 секунд. Операция insert")
     plt.xticks(rotation=45)
     plt.tight_layout()
     plt.savefig(plots_dir / "new_pairs_per_5sec.png", dpi=150)
@@ -275,6 +328,7 @@ def main() -> None:
     # 5. Запросы в секунду = find/sec
     plt.figure(figsize=(14, 5))
     plt.step(df_requests_sec["datetime"], df_requests_sec["requests"], where="post")
+    # add_mean_line(df_requests_sec["datetime"])
     plt.xlabel("Время, с")
     plt.ylabel("Операции поиска")
     plt.title("Число операций поиска в секунду")
@@ -293,6 +347,31 @@ def main() -> None:
     plt.tight_layout()
     plt.savefig(plots_dir / "requests_per_5sec.png", dpi=150)
     plt.close()
+
+    # Новые правила в секунду
+    plt.figure(figsize=(14, 5))
+    plt.step(df_new_triples_sec["datetime"], df_new_triples_sec["new_triples"], where="post")
+    # add_mean_line(df_new_triples_sec["datetime"])
+    plt.xlabel("Время, с")
+    plt.ylabel("Новые правила")
+    plt.title("Число появление новых правил в секунду. Операция upsert")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(plots_dir / "new_triples_per_sec.png", dpi=150)
+    plt.close()
+
+
+    # Новые правила в 5 секунд
+    plt.figure(figsize=(14, 5))
+    plt.step(df_new_triples_5sec["datetime"], df_new_triples_5sec["new_triples"], where="post")
+    plt.xlabel("Время, с")
+    plt.ylabel("Новые правила")
+    plt.title("Число появление новых правил в 5 секунд. Операция upsert")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(plots_dir / "new_triples_per_5sec.png", dpi=150)
+    plt.close()
+
 
     log("done")
     log(f"saved: {out_dir / 'cumulative_unique_pairs.tsv'}")
