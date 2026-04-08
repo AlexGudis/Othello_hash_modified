@@ -276,7 +276,7 @@ def plot_construction_time(results_cuckoo, results_othello, title):
 if __name__ == "__main__":
     random.seed(42)
 
-    sizes = [10000, 20000, 50000, 100000]
+    sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
     avg_factor = 3
     find_ops_count = 50_000
 
