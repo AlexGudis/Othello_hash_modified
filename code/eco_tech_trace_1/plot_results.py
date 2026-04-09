@@ -202,7 +202,7 @@ def main() -> None:
             total_events += 1
 
         
-        break
+        # break
 
     if global_min_sec is None or global_max_sec is None:
         raise RuntimeError("No events found in input files")
