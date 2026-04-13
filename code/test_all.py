@@ -975,14 +975,14 @@ def build_realistic_plots(results_cuckoo, results_othello, results_linear, outpu
 if __name__ == "__main__":
     random.seed(42)
 
-    sintetic_test = False
+    sintetic_test = True
     linear_check = False
     insert_coeff=0.1
     if sintetic_test:
         # sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
-        # sizes = [1000, 2000, 4000, 6000, 8000, 10_000, 15_000, 20_000, 30_000, 40_000, 50_000]
+        sizes = [1000, 2000, 4000, 8000, 10_000, 15_000, 20_000, 30_000, 50_000, 75_000, 100_000, 130_000, 160_000, 200_000, 250_000]
         # sizes = [100, 500, 1000]
-        sizes = [1000, 2000, 4000, 6000, 8000, 10_000, 15_000, 20_000]
+        # sizes = [1000, 2000, 4000, 6000, 8000, 10_000, 15_000, 20_000]
         avg_factor = 5
         find_ops_count = 50_000
         dataset_dir = Path("datasets")
