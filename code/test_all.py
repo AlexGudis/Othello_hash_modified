@@ -775,14 +775,14 @@ def plot_metric(
 
     if annotate:
         for x, y in zip(sizes, series1):
-            ax.annotate(f"{y:.3g}", (x, y), textcoords="offset points", xytext=(0, 6), ha="center", fontsize=8)
+            ax.annotate(f"{y:.2f}", (x, y), textcoords="offset points", xytext=(0, 6), ha="center", fontsize=8)
 
         for x, y in zip(sizes, series2):
-            ax.annotate(f"{y:.3g}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
+            ax.annotate(f"{y:.2f}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
         
         if series3 is not None:
             for x, y in zip(sizes, series3):
-                ax.annotate(f"{y:.3g}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
+                ax.annotate(f"{y:.2f}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
 
 
     fig.tight_layout()
@@ -803,6 +803,7 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir:
             "ylabel": "Время серии find-операций, сек",
             "title": f"Время {find_ops_count} операций поиска",
             "filename": "time_find.png",
+            "annotate": True,
         },
         {
             "key": "memory_bytes",
@@ -818,25 +819,27 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir:
             "ylabel": "Время построения структуры, сек",
             "title": "Время построения структуры",
             "filename": "time_construction.png",
+            "annotate": True,
         },
         {
             "key": "hash_call_construction",
             "ylabel": "Число вызовов хеш-функций",
             "title": "Хеш-функции при построении",
             "filename": "hash_calls_construct.png",
+            "annotate": True,
         },
         {
             "key": "memory_count_construction",
             "ylabel": "Число обращений к памяти",
             "title": "Обращения к памяти при построении",
             "filename": "memory_count_construction.png",
+            "annotate": True,
         },
         {
             "key": "hash_calls_find",
             "ylabel": "Число вызовов хеш-функций",
             "title": "Хеш-функции при поиске",
             "filename": "hash_calls_find.png",
-            "annotate": True,
         },
         {
             "key": "memory_count_find",
@@ -861,18 +864,21 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir:
             "ylabel": "Время серии вставок, сек",
             "title": f"Время вставки правил",
             "filename": "time_insert.png",
+            "annotate": True,
         },
         {
             "key": "hash_calls_insert",
             "ylabel": "Число вызовов хеш-функций",
             "title": f"Хеш-функции при вставке",
             "filename": "hash_calls_insert.png",
+            "annotate": True,
         },
         {
             "key": "memory_count_insert",
             "ylabel": "Число обращений к памяти",
             "title": "Обращения к памяти при вставке",
             "filename": "memory_count_insert.png",
+            "annotate": True,
         },
         {
             "key": "reconstruction_count_insert",

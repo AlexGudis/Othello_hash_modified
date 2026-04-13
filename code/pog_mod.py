@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from typing import Callable
 from abstracts import HashAlgorithmBase
 import random
+import numpy as np
+
+VALUE_DTYPE = np.uint32
+INDEX_DTYPE = np.intp
+VALUE_MAX = np.iinfo(VALUE_DTYPE).max
 
 # TODO: у всех функций должны быть понятные полные докстринги, все параметры и возвращаемые значения аннотированы
 # TODO: сделай код красивым и переходим на pog
@@ -84,8 +89,8 @@ class PogQuery:
 
     ha: Callable
     hb: Callable
-    a: list
-    b: list
+    a: np.ndarray
+    b: np.ndarray
     
     def find(self, key: str):
         """Found a value (dest port) for key in MAC-VLAN table"""
@@ -97,15 +102,13 @@ class PogQuery:
         int_key = FastHash.convert_to_int_key(key)
         i = self.ha(int_key)
         j = self.hb(int_key)
-
-        a_value = self.a[i]
-        b_value = self.b[j]
         
-        return a_value ^ b_value
+        return int(self.a[i] ^ self.b[j])
     
 
 
 class PogControl(HashAlgorithmBase):
+    VALUE_DTYPE = np.uint32
 
     def __init__(self, table: dict[str, str] = None):
         super().__init__()
@@ -126,8 +129,8 @@ class PogControl(HashAlgorithmBase):
         self.graph = BipartiteGraph()
 
         # Битовые массивы двудольного графа
-        self.a = [0] * self.part_size
-        self.b = [0] * self.part_size
+        self.a = np.zeros(self.part_size, dtype=self.VALUE_DTYPE)
+        self.b = np.zeros(self.part_size, dtype=self.VALUE_DTYPE)
         self.uf = ComponentUF(self.part_size)
         self._uf_dirty = False
 
@@ -140,8 +143,13 @@ class PogControl(HashAlgorithmBase):
 
         print(f'Generated Othello structure with array_size = {self.part_size}')
 
+    @staticmethod
+    def _to_value_dtype(value: int | str) -> np.uint32:
+        ivalue = int(value)
+        return np.uint32(ivalue)
 
-    def _xor_component(self, root: int, delta: int) -> None:
+
+    '''def _xor_component(self, root: int, delta: int) -> None:
         if delta == 0:
             return
 
@@ -151,7 +159,24 @@ class PogControl(HashAlgorithmBase):
 
         for v in self.uf.members_v[root]:
             self.metrics.inc("memory_count")
-            self.b[v] ^= delta
+            self.b[v] ^= delta'''
+
+
+    def _xor_component(self, root: int, delta: int) -> None:
+        delta_t = self._to_value_dtype(delta)
+        if delta_t == 0:
+            return
+
+        u_members = self.uf.members_u[root]
+        v_members = self.uf.members_v[root]
+
+        if u_members:
+            self.metrics.inc("memory_count", len(u_members))
+            self.a[np.asarray(u_members, dtype=INDEX_DTYPE)] ^= delta_t
+
+        if v_members:
+            self.metrics.inc("memory_count", len(v_members))
+            self.b[np.asarray(v_members, dtype=INDEX_DTYPE)] ^= delta_t
 
 
     def _rebuild_union_find(self) -> None:
@@ -248,13 +273,13 @@ class PogControl(HashAlgorithmBase):
 
             u_mark = "U_" + str(u_ind)
             v_mark = "V_" + str(v_ind)
-            t_k = hash_mapping[(u_ind, v_ind)]
+            t_k = self._to_value_dtype(hash_mapping[(u_ind, v_ind)])
 
 
             self.metrics.inc("memory_count")
             self.metrics.inc("memory_count")
-            if u_mark not in computed_vertexes and v_mark not in computed_vertexes:
-                self.a[u_ind] = 0
+            if u_mark not in computed_vertexes and v_mark not in computed_vertexes:                
+                self.a[u_ind] = self.VALUE_DTYPE(0)
                 self.b[v_ind] = t_k
 
                 computed_vertexes.add(u_mark)
@@ -282,8 +307,8 @@ class PogControl(HashAlgorithmBase):
         # Иначе когда приходим из insert, то уже сликшом большая плотность получается и не можем вставить
 
         while True:
-            self.a = [0] * self.part_size
-            self.b = [0] * self.part_size
+            self.a = np.zeros(self.part_size, dtype=self.VALUE_DTYPE)
+            self.b = np.zeros(self.part_size, dtype=self.VALUE_DTYPE)
 
             seed1 = random.getrandbits(64)
             seed2 = random.getrandbits(64)
@@ -313,7 +338,7 @@ class PogControl(HashAlgorithmBase):
         if self._uf_dirty:
             self._rebuild_union_find()
 
-        t = int(value)
+        t = self._to_value_dtype(value)
         int_key = FastHash.convert_to_int_key(key)
 
         u = self.ha(int_key)
