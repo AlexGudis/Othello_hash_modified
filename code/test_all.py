@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from common import generate_kv
 from cuckoo import CuckooHash
 from pog_mod import PogControl
+from linear_search import LinearSearchTable
 import numpy as np
 
 
@@ -329,8 +330,6 @@ def experiment(
         total_memory_counts_delete = 0
 
         for avg_idx in range(avg_factor):
-            # Сейчас получается, что Отелло и Кукушкин хеш тестируются на самом деле на разных таблицах
-            # Это неправильно
             default_table = get_or_create_table(
                 dataset_dir,
                 n,
@@ -366,6 +365,7 @@ def experiment(
             # Объём занимаемой памяти
             measured_obj = get_measured_object(algo, measure_query_only=measure_query_only)
             total_memory += deep_getsizeof(measured_obj)
+
 
         avg_find_time = total_find_time / avg_factor
         avg_memory = total_memory / avg_factor
@@ -635,9 +635,11 @@ def plot_metric(
     sizes,
     series1,
     series2,
+    series3=None,
     *,
     label1,
     label2,
+    label3=None,
     xlabel,
     ylabel,
     title,
@@ -651,13 +653,20 @@ def plot_metric(
     cmap="viridis",
 ):
     if kind == "heatmap":
-        data = np.array([series1, series2], dtype=float)
+        data_list = [series1, series2]
+        labels = [label1, label2]
+
+        if series3 is not None:
+            data_list.append(series3)
+            labels.append(label3)
+
+        data = np.array(data_list, dtype=float)
 
         fig, ax = plt.subplots(figsize=(max(7, len(sizes) * 1.2), 2.8))
         im = ax.imshow(data, aspect="auto", cmap=cmap)
 
-        ax.set_yticks([0, 1])
-        ax.set_yticklabels([label1, label2])
+        ax.set_yticks(range(len(labels)))
+        ax.set_yticklabels(labels)
 
         ax.set_xticks(range(len(sizes)))
         ax.set_xticklabels(sizes)
@@ -684,6 +693,9 @@ def plot_metric(
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.plot(sizes, series1, marker="o", label=label1)
     ax.plot(sizes, series2, marker="o", label=label2)
+    
+    if series3 is not None:
+        ax.plot(sizes, series3, marker="o", label=label3)
 
     setup_plot(
         ax,
@@ -708,6 +720,11 @@ def plot_metric(
 
         for x, y in zip(sizes, series2):
             ax.annotate(f"{y:.3g}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
+        
+        if series3 is not None:
+            for x, y in zip(sizes, series3):
+                ax.annotate(f"{y:.3g}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
+
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
@@ -718,140 +735,100 @@ def plot_metric(
 # 8. Построение конкретных графиков
 # ============================================================
 
-def build_all_plots(results_cuckoo, results_othello, output_dir: Path, find_ops_count):
+def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir: Path, find_ops_count, linear_check=False):
     sizes = results_cuckoo["sizes"]
 
-    plot_metric(
-        sizes,
-        results_cuckoo["find_time_sec"],
-        results_othello["find_time_sec"],
-        label1="CuckooHash",
-        label2="Pog/Othello",
-        xlabel="Размер множества ключей",
-        ylabel="Время серии find-операций, сек",
-        title=f"Время {find_ops_count} операций поиска",
-        output_path=output_dir / f"time_find.png",
-        x_log=False,
-        y_log=False,
-    )
+    plots = [
+        {
+            "key": "find_time_sec",
+            "ylabel": "Время серии find-операций, сек",
+            "title": f"Время {find_ops_count} операций поиска",
+            "filename": "time_find.png",
+        },
+        {
+            "key": "memory_bytes",
+            "transform": lambda x: x / 1024,
+            "ylabel": "Память, KiB",
+            "title": "Объём занимаемой памяти",
+            "filename": "memory.png",
+            "y_log": True,
+        },
+        {
+            "key": "construction_time",
+            "ylabel": "Время построения структуры, сек",
+            "title": "Время построения структуры",
+            "filename": "time_construction.png",
+        },
+        {
+            "key": "hash_call_construction",
+            "ylabel": "Число вызовов хеш-функций",
+            "title": "Хеш-функции при построении",
+            "filename": "hash_calls_construct.png",
+        },
+        {
+            "key": "memory_count_construction",
+            "ylabel": "Число обращений к памяти",
+            "title": "Обращения к памяти при построении",
+            "filename": "memory_count_construction.png",
+        },
+        {
+            "key": "hash_calls_find",
+            "ylabel": "Число вызовов хеш-функций",
+            "title": "Хеш-функции при поиске",
+            "filename": "hash_calls_find.png",
+            "annotate": True,
+        },
+        {
+            "key": "memory_count_find",
+            "ylabel": "Число обращений к памяти",
+            "title": "Обращения к памяти при поиске",
+            "filename": "memory_count_find.png",
+        },
+        {
+            "key": "hash_calls_delete",
+            "ylabel": "Число вызовов хеш-функций",
+            "title": "Хеш-функции при удалении",
+            "filename": "hash_calls_delete.png",
+        },
+        {
+            "key": "memory_count_delete",
+            "ylabel": "Число обращений к памяти",
+            "title": "Обращения к памяти при удалении",
+            "filename": "memory_count_delete.png",
+        },
+    ]
 
-    plot_metric(
-        sizes,
-        [x / 1024 for x in results_cuckoo["memory_bytes"]],
-        [x / 1024 for x in results_othello["memory_bytes"]],
-        label1="CuckooHash",
-        label2="Pog/Othello",
-        xlabel="Размер множества ключей",
-        ylabel="Память, KiB",
-        title="Объём занимаемой памяти",
-        output_path=output_dir / f"memory.png",
-        x_log=False,
-        y_log=True,
-    )
+    for cfg in plots:
+        key = cfg["key"]
 
-    plot_metric(
-        sizes,
-        results_cuckoo["construction_time"],
-        results_othello["construction_time"],
-        label1="CuckooHash",
-        label2="Pog/Othello",
-        xlabel="Размер множества ключей",
-        ylabel="Время построения структуры, сек",
-        title="Время построения структуры",
-        output_path=output_dir / f"time_construction.png",
-        x_log=False,
-        y_log=False,
-    )
+        transform = cfg.get("transform", lambda x: x)
 
+        series1 = [transform(x) for x in results_cuckoo[key]]
+        series2 = [transform(x) for x in results_othello[key]]
+        series3 = None
+        if linear_check:
+            series3 = [transform(x) for x in results_linear[key]]
 
-    plot_metric(
-        sizes,
-        results_cuckoo["hash_call_construction"],
-        results_othello["hash_call_construction"],
-        label1="CuckooHash",
-        label2="Pog/Othello",
-        xlabel="Размер множества ключей",
-        ylabel="Число вызовов хеш-функций",
-        title="Число вызовов хеш-функций во время построения",
-        output_path=output_dir / f"hash_calls_construct.png",
-        x_log=False,
-        y_log=False,
-    )
-
-    plot_metric(
-        sizes,
-        results_cuckoo["memory_count_construction"],
-        results_othello["memory_count_construction"],
-        label1="CuckooHash",
-        label2="Pog/Othello",
-        xlabel="Размер множества ключей",
-        ylabel="Число обращений к памяти",
-        title="Число обращений к памяти во время построения",
-        output_path=output_dir / f"memory_count_construction.png",
-        x_log=False,
-        y_log=False,
-    )
-
-    plot_metric(
-        sizes,
-        results_cuckoo["hash_calls_find"],
-        results_othello["hash_calls_find"],
-        label1="CuckooHash",
-        label2="Pog/Othello",
-        xlabel="Размер множества ключей",
-        ylabel="Число вызовов хеш-функций",
-        title=f"Число вызовов хеш-функций при поиске",
-        output_path=output_dir / f"hash_calls_find.png",
-        x_log=False,
-        y_log=False,
-        annotate=True,
-    )
-
-
-    plot_metric(
-        sizes,
-        results_cuckoo["memory_count_find"],
-        results_othello["memory_count_find"],
-        label1="CuckooHash",
-        label2="Pog/Othello",
-        xlabel="Размер множества ключей",
-        ylabel="Число обращений к памяти",
-        title=f"Число обращений к памяти при поиске",
-        output_path=output_dir / f"memory_count_find.png",
-        x_log=False,
-        y_log=False,
-    )
-
-    
-
-    plot_metric(
-        sizes,
-        results_cuckoo["hash_calls_delete"],
-        results_othello["hash_calls_delete"],
-        label1="CuckooHash",
-        label2="Pog/Othello",
-        xlabel="Размер множества ключей",
-        ylabel="Число вызовов хеш-функций",
-        title=f"Число вызовов хеш-функций при удалении",
-        output_path=output_dir / f"hash_calls_delete.png",
-        x_log=False,
-        y_log=False,
-    )
-
-
-    plot_metric(
-        sizes,
-        results_cuckoo["memory_count_delete"],
-        results_othello["memory_count_delete"],
-        label1="CuckooHash",
-        label2="Pog/Othello",
-        xlabel="Размер множества ключей",
-        ylabel="Число обращений к памяти",
-        title=f"Число обращений к памяти при удалении",
-        output_path=output_dir / f"memory_count_delete.png",
-        x_log=False,
-        y_log=False,
-    )
+        plot_metric(
+            sizes,
+            series1,
+            series2,
+            series3,
+            label1="CuckooHash",
+            label2="Pog/Othello",
+            label3="LinearSearch",
+            xlabel="Размер множества ключей",
+            ylabel=cfg["ylabel"],
+            title=cfg["title"],
+            output_path=output_dir / cfg["filename"],
+            x_log=cfg.get("x_log", False),
+            y_log=cfg.get("y_log", False),
+            tight_y=cfg.get("tight_y", False),
+            y_pad_ratio=cfg.get("y_pad_ratio", 0.08),
+            annotate=cfg.get("annotate", False),
+            kind=cfg.get("kind", "line"),
+            cmap=cfg.get("cmap", "viridis"),
+        )
 
 
 def build_realistic_plots(results_cuckoo, results_othello, output_dir: Path):
@@ -895,12 +872,14 @@ def build_realistic_plots(results_cuckoo, results_othello, output_dir: Path):
 if __name__ == "__main__":
     random.seed(42)
 
-    real = True
-    if not real:
+    sintetic_test = True
+    linear_check = True
+    if sintetic_test:
         # sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
-        sizes = [1000, 2000, 4000, 10000]
+        # sizes = [1000, 2000, 4000, 10000]
+        sizes = [100, 500, 1000]
         avg_factor = 3
-        find_ops_count = 250_000
+        find_ops_count = 50_000
         dataset_dir = Path("datasets")
         output_dir = create_output_dir()
 
@@ -922,6 +901,19 @@ if __name__ == "__main__":
             measure_query_only=True,
         )
 
+        results_linear = None
+        if linear_check:
+
+            results_linear = experiment(
+                algorithm_factory=LinearSearchTable,
+                sizes=sizes,
+                avg_factor=avg_factor,
+                find_ops_count=find_ops_count,
+                delete_coeff=0.1,
+                measure_query_only=False,
+            )
+            save_json(results_linear, output_dir / "results_linear_search.json")
+
         save_json(results_cuckoo, output_dir / "results_cuckoo.json")
         save_json(results_othello, output_dir / "results_pog_othello.json")
         save_combined_csv(results_cuckoo, results_othello, output_dir / "combined_results.csv")
@@ -930,8 +922,10 @@ if __name__ == "__main__":
         build_all_plots(
             results_cuckoo,
             results_othello,
+            results_linear,
             output_dir=output_dir,
             find_ops_count=find_ops_count,
+            linear_check=linear_check
         )
 
         print(f"\nРезультаты сохранены в папку: {output_dir}")
@@ -972,8 +966,21 @@ if __name__ == "__main__":
             measure_query_only=True,
         )
 
+        results_linear_real = experiment_realistic(
+            algorithm_factory=LinearSearchTable,
+            sizes=sizes,
+            avg_factor=avg_factor,
+            dataset_dir=dataset_dir,
+            duration_sec=realistic_profile["duration_sec"],
+            find_rate=realistic_profile["find_rate"],
+            upsert_rate=realistic_profile["upsert_rate"],
+            insert_rate=realistic_profile["insert_rate"],
+            measure_query_only=False,
+        )
+
         save_json(results_cuckoo_real, output_dir / "results_cuckoo_realistic.json")
         save_json(results_othello_real, output_dir / "results_pog_realistic.json")
+        save_json(results_linear_real, output_dir / "results_linear_realistic.json")
         save_json(realistic_profile, output_dir / "realistic_profile.json")
 
         build_realistic_plots(
