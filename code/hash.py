@@ -3,11 +3,6 @@ hardware applications // Proc. of Int. Conf. on Computing and Information. — C
 1994. — С. 1621—1636."""
 
 import numpy as np
-import random
-
-seed = random.randint(1, 100_000_000)
-rng = np.random.default_rng(seed=seed)
-print(seed)
 
 class HashFunction:
     def __init__(self, key_dim, hash_dim, max_val=None, *, salt=None, mat=None):
@@ -70,7 +65,7 @@ class HashFunction:
 
 
 
-class FastHash:
+'''class FastHash:
     def __init__(self, seed: int, max_val: int):
         self.seed = seed & 0xFFFFFFFFFFFFFFFF
         self.max_val = max_val
@@ -105,7 +100,29 @@ class FastHash:
         if not (0 <= vlan_int < (1 << 12)):
             raise ValueError(f"VLAN out of range [0, 4095]: {vlan_int}")
 
-        return (mac_int << 12) | vlan_int
+        return (mac_int << 12) | vlan_int'''
+    
+
+import hashlib
+class FastHash:
+    """хеш для байтового ключа MAC-VLAN."""
+
+    def __init__(self, seed: int, size: int) -> None:
+        self.size = size
+        self.key = seed.to_bytes(8, byteorder="little", signed=False)
+    def __call__(self, key_encoded: bytes) -> int:
+        digest = hashlib.blake2b(
+            key_encoded,
+            digest_size=8,
+            key=self.key,
+        ).digest()
+
+        h = int.from_bytes(digest, byteorder="little", signed=False)
+        return h % self.size
+
+    @staticmethod
+    def convert_to_int_key(key: str) -> bytes:
+        return key.strip().lower().encode("utf-8")
 
 
 if __name__ == "__main__":

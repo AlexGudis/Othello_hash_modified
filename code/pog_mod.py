@@ -12,6 +12,66 @@ import random
 # TODO: сделай код красивым и переходим на pog
 
 
+class ComponentUF:
+    def __init__(self, u_offset: int):
+        self.parent: dict[int, int] = {}
+        self.size: dict[int, int] = {}
+
+        # какие индексы массива a лежат в этой компоненте
+        self.members_u: dict[int, list[int]] = {} 
+
+        # какие индексы массива b лежат в этой компоненте
+        # компонента определяется своим корнем
+        self.members_v: dict[int, list[int]] = {}
+        self.u_offset = u_offset  # = ma (кодировка внутри UF)
+
+    def _make(self, x: int, is_u: bool) -> None:
+        if x in self.parent:
+            return
+        self.parent[x] = x
+        self.size[x] = 1
+        if is_u:
+            self.members_u[x] = [x]
+            self.members_v[x] = []
+        else:
+            self.members_u[x] = []
+            self.members_v[x] = [x - self.u_offset]
+
+    def make_u(self, u: int) -> int:
+        self._make(u, True)
+        return u
+
+    def make_v(self, v: int) -> int:
+        x = self.u_offset + v
+        self._make(x, False)
+        return x
+
+    def find(self, x: int) -> int:
+        p = self.parent[x]
+        if p != x:
+            self.parent[x] = self.find(p)
+        return self.parent[x]
+
+    def union(self, a: int, b: int) -> int:
+        ra = self.find(a)
+        rb = self.find(b)
+        if ra == rb:
+            return ra
+
+        if self.size[ra] < self.size[rb]:
+            ra, rb = rb, ra
+
+        self.parent[rb] = ra
+        self.size[ra] += self.size[rb]
+        self.members_u[ra].extend(self.members_u[rb])
+        self.members_v[ra].extend(self.members_v[rb])
+
+        del self.size[rb]
+        del self.members_u[rb]
+        del self.members_v[rb]
+        return ra
+
+
 @dataclass(slots=True)
 class PogQuery:
     """Query structure.
@@ -22,28 +82,10 @@ class PogQuery:
     - два битовых массива
     """
 
-    parts_cnt: int
-    part_size: int
     ha: Callable
     hb: Callable
-    a: bitarray.bitarray
-    b: bitarray.bitarray
-
-    def get_value(self, array, hash_number) -> int:
-        """Получение значения по хеш-номеру (столбцу)"""
-
-        # value = ""
-
-        # for ind in range(self.parts_cnt):
-        #     value += str(array[ind * self.part_size + hash_number])
-
-        # value = int(value, base=2)
-
-        value = 0
-        base = hash_number
-        for part in range(self.parts_cnt):
-            value = (value << 1) | int(array[part * self.part_size + base])
-        return value
+    a: list
+    b: list
     
     def find(self, key: str):
         """Found a value (dest port) for key in MAC-VLAN table"""
@@ -56,21 +98,14 @@ class PogQuery:
         i = self.ha(int_key)
         j = self.hb(int_key)
 
-        a_value = self.get_value(self.a, i)
-        b_value = self.get_value(self.b, j)
+        a_value = self.a[i]
+        b_value = self.b[j]
         
         return a_value ^ b_value
     
 
 
 class PogControl(HashAlgorithmBase):
-
-    @staticmethod
-    def find_parts_cnt(table: dict):
-        """По таблице находим, какая длина должна быть у доли графа, вытягиваем в длину биты"""
-
-        max_elem = max([int(v) for k, v in table.items()])
-        return len(bin(max_elem)[2:])
 
     def __init__(self, table: dict[str, str] = None):
         super().__init__()
@@ -79,31 +114,22 @@ class PogControl(HashAlgorithmBase):
         # ControlStructure обязана хранить и поддерживать актуальной состояние таблицы
         self.table = dict(table or {})
 
-        # Количество "линейных" массивов в зависимости от максимального номера порта
-        self.parts_cnt = PogControl.find_parts_cnt(self.table)
-
         # Хеш-функция будет работать как со столбцами, а не индексами в массиве (см миро)
-        self.part_size  = int(n * 1.33)
-
-        # Размеры битовых массивов для многоклассовой классификации Отелло
-        self.ma = self.part_size * self.parts_cnt
-        self.mb = self.part_size * self.parts_cnt
+        # self.part_size  = int(n * 1.33)
+        self.part_size = 1 << ceil(log2(max(2, int(n * 1.33))))
 
         # Изначально хеш-функции пустые, определяются на этапе построения
         self.ha = None
         self.hb = None
 
-        # Сколько бит нужно, чтобы записать номер столбца
-        self.hash_size = ceil(log2(self.part_size))
-
         # Двудольный граф, изначально пустой
         self.graph = BipartiteGraph()
 
         # Битовые массивы двудольного графа
-        self.a = bitarray.bitarray(self.ma)
-        self.b = bitarray.bitarray(self.mb)
-        self.a.setall(0)
-        self.b.setall(0)
+        self.a = [0] * self.part_size
+        self.b = [0] * self.part_size
+        self.uf = ComponentUF(self.part_size)
+        self._uf_dirty = False
 
         self._query: PogQuery | None = None
 
@@ -112,58 +138,36 @@ class PogControl(HashAlgorithmBase):
         # Фильтр Блума размера +- равному уникальному числу элементов
         # self.bloom_filter = BloomFilterCounter(self.part_size)
 
-        print(f'Generated Othello structure with ma={
-            self.ma}, mb={self.mb}, hash_size={self.hash_size}')
-        
+        print(f'Generated Othello structure with array_size = {self.part_size}')
 
-    def get_value(self, array, hash_number) -> int:
-        """Получение значения по хеш-номеру (столбцу)"""
 
-        # value = ""
+    def _xor_component(self, root: int, delta: int) -> None:
+        if delta == 0:
+            return
 
-        # for ind in range(self.parts_cnt):
-        #     value += str(array[ind * self.part_size + hash_number])
+        for u in self.uf.members_u[root]:
+            self.a[u] ^= delta
 
-        # value = int(value, base=2)
+        for v in self.uf.members_v[root]:
+            self.b[v] ^= delta
 
-        value = 0
-        base = hash_number
-        for part in range(self.parts_cnt):
-            value = (value << 1) | int(array[part * self.part_size + base])
-        return value
-    
 
-    def set_value(self, array, hash_number: int, value: int) -> None:
-        """Установка значения по хеш-номеру (столбцу)"""
+    def _rebuild_union_find(self) -> None:
+        """Лениво пересобрать Union-Find по текущему графу."""
+        self.uf = ComponentUF(self.part_size)
 
-        # indexes = []
-        # for p in range(self.parts_cnt):
-        #     indexes.append(p * self.part_size + hash_number)
+        for (u, v), _t in self.graph.adj_list.items():
+            xu = self.uf.make_u(u)
+            xv = self.uf.make_v(v)
+            self.uf.union(xu, xv)
 
-        # inserting_bits = bin(value)[2:]
-
-        # # Нормелизация чила: 11 -> 0011 при 16 портах
-        # if len(inserting_bits) != self.parts_cnt:
-        #         inserting_bits = '0' * (self.parts_cnt - len(inserting_bits)) + inserting_bits
-
-        # # [(ind, bit)]
-        # result = list(zip(indexes, inserting_bits))
-        # # print(result)
-
-        # for ind, bit in result:
-        #     array[ind] = int(bit)
-
-        for part in range(self.parts_cnt - 1, -1, -1):
-            array[part * self.part_size + hash_number] = value & 1
-            value >>= 1
+        self._uf_dirty = False
 
     def _publish_query(self) -> None:
         if self.ha is None or self.hb is None:
             raise RuntimeError("Hash functions are not initialized")
 
         self._query = PogQuery(
-            parts_cnt=self.parts_cnt,
-            part_size=self.part_size,
             ha=self.ha,
             hb=self.hb,
             a=self.a,
@@ -183,33 +187,49 @@ class PogControl(HashAlgorithmBase):
         return self._query.find(key)
     
 
-    def generate_edges(self):
-        """Генерация рёбер двудольного графа с классами рёбер"""
-        hash_mapping = dict()  # {(u_ind, v_ind): t_k}
-        has_cycle = False
+    def generate_edges(self) -> tuple[dict[tuple[int, int], int], bool]:
+        """Построить граф и UF для текущей пары hash-функций.
+
+        Returns:
+            hash_mapping: отображение (u, v) -> значение ребра
+            has_cycle: True, если обнаружен цикл или дубль ребра
+        """
+        hash_mapping: dict[tuple[int, int], int] = {}
+
+        # ВАЖНО: для каждой попытки строим граф и UF заново
+        self.graph = BipartiteGraph()
+        self.uf = ComponentUF(self.part_size)
 
         for k, v in self.table.items():
+            int_key = FastHash.convert_to_int_key(k)
+            u_node = self.ha(int_key)
+            v_node = self.hb(int_key)
 
-            # Генерируем номера узлов через хеши
-            u_node = self.ha(FastHash.convert_to_int_key(k))
-            v_node = self.hb(FastHash.convert_to_int_key(k))
             self.metrics.inc("hash_calls_total")
             self.metrics.inc("hash_calls_total")
 
-            if (u_node, v_node) in self.graph.adj_list:
-                # Если возникло наложение и дубляж ребра - это цикл
-                has_cycle = True
-                return hash_mapping, has_cycle
+            edge = (u_node, v_node)
+            # Ребро дубль это наш цикл
+            if edge in self.graph.adj_list:
+                return {}, True
+
+            xu = self.uf.make_u(u_node)
+            xv = self.uf.make_v(v_node)
+
+            # Если вершины уже в одной компоненте — новое ребро замыкает цикл
+            if self.uf.find(xu) == self.uf.find(xv):
+                return {}, True
 
             self.graph.add_edge(u_node, v_node, int(v))
-            # self.bloom_filter.add_to_filter(k)
+            self.uf.union(xu, xv)
+            hash_mapping[edge] = int(v)
 
-            hash_mapping[(u_node, v_node)] = int(v)
+        return hash_mapping, False
 
-        # print(hash_mapping)
-        return hash_mapping, has_cycle
 
     def compute_arrays(self, hash_mapping: dict):
+        """Заполнить битовые массивы значениями"""
+
         computed_vertexes = set()
         traversal = self.graph.connected_components()[3]
         # print(traversal)
@@ -232,224 +252,132 @@ class PogControl(HashAlgorithmBase):
                 self.metrics.inc("memory_count")
                 self.metrics.inc("memory_count")
 
-                self.set_value(self.a, u_ind, 0)
-                self.set_value(self.b, v_ind, t_k)
+                self.a[u_ind] = 0
+                self.b[v_ind] = t_k
 
                 computed_vertexes.add(u_mark)
                 computed_vertexes.add(v_mark)
 
             elif u_mark not in computed_vertexes:
-                b_value = self.get_value(self.b, v_ind)
-
+                b_value = self.b[v_ind]
                 self.metrics.inc("memory_count")
-                self.set_value(self.a, u_ind, b_value ^ t_k)
-
+                self.a[u_ind] = b_value ^ t_k
                 computed_vertexes.add(u_mark)
 
             elif v_mark not in computed_vertexes:
-                a_value = self.get_value(self.a, u_ind)
-
+                a_value = self.a[u_ind]
                 self.metrics.inc("memory_count")
-                self.set_value(self.b, v_ind, a_value ^ t_k)
-                
+                self.b[v_ind] = a_value ^ t_k                
                 computed_vertexes.add(v_mark)
             else:
                 print("Incorrect traversal")
 
-    def construct(self):
-        """Create and fill the whole structure of Othello based on MAC-VLAN table"""
 
-        # phase 1
-        cycle = True
-        hash_mapping = None
-        while cycle:
-            if hash_mapping:
-                # Если значение не None, значит, в цикле уже были и выбрали неверные хеш-функции
-                # Необходимо очистить текущее состояние: сбросить граф и битовые массивы
-                self.graph = BipartiteGraph()
-                self.a.setall(0)
-                self.b.setall(0)
-                print('Cycle found')
+    def construct(self) -> None:
+        """Полностью перестроить Othello-структуру."""
 
-            # self.ha = HashFunction(60, self.hash_size, self.part_size)
-            # self.hb = HashFunction(60, self.hash_size, self.part_size)
+        # При перестроении нужно заново пересчитать размер по текущей таблице (типа как в Кукушке)
+        n = len(self.table)
+        self.part_size = 1 << ceil(log2(max(2, int(n * 1.33))))
+        # Иначе когда приходим из insert, то уже сликшом большая плотность получается и не можем вставить
 
-            self.ha = FastHash(random.getrandbits(64), self.part_size)
-            self.hb = FastHash(random.getrandbits(64), self.part_size)
-            
+        while True:
+            self.a = [0] * self.part_size
+            self.b = [0] * self.part_size
+
+            seed1 = random.getrandbits(64)
+            seed2 = random.getrandbits(64)
+            # print(seed1, seed2)
+            # seed1 = 1882175618243780441
+            # seed2 = 7656401530162172559
+
+            self.ha = FastHash(seed1, self.part_size)
+            self.hb = FastHash(seed2, self.part_size)
+
             self.metrics.inc("hash_calls_total")
             self.metrics.inc("hash_calls_total")
 
             hash_mapping, has_cycle = self.generate_edges()
             if has_cycle:
+                print("Cycle found")
                 continue
 
-            cycle = self.graph.check_cycle()
+            break
 
-        # phase 2. traversal
         self.compute_arrays(hash_mapping)
         self._publish_query()
+        self._uf_dirty = False
 
 
-    def insert(self, k: str, value: str):
-        """Insert a key into Othello structure"""
-        "Нужно передавать имеющуюся таблицу на случай невозможности добавить ключ и необходимости перестроения всей структуры"
+    def insert(self, key: str, value: str) -> None:
+        if self._uf_dirty:
+            self._rebuild_union_find()
 
-        # TODO: нужен адекватный dfs обход вершин
-        # TODO: нужен корректный поиск компонент связности в графе
+        t = int(value)
+        int_key = FastHash.convert_to_int_key(key)
 
-        # Генерируем номера узлов через хеши
-        u_node = self.ha(FastHash.convert_to_int_key(k))
-        v_node = self.hb(FastHash.convert_to_int_key(k))
+        u = self.ha(int_key)
+        v = self.hb(int_key)
+        edge = (u, v)
+
         self.metrics.inc("hash_calls_total")
         self.metrics.inc("hash_calls_total")
 
-        u_node_sig = "U_" + str(u_node)
-        v_node_sig = "V_" + str(v_node)
-
-        if (u_node, v_node) in self.graph.adj_list:
-            self.table |= {k: value}
+        # Коллизия по ребру => цикл/дубликат, полный rebuild
+        if edge in self.graph.adj_list:
+            self.table[key] = value
             self.construct()
-            return  # Потребовалось перестроение структуры (ребро дубляж)
+            return
 
-        old_vertexes = self.graph.get_vertexes()
+        xu = self.uf.make_u(u)
+        xv = self.uf.make_v(v)
 
-        self.graph.add_edge(u_node, v_node, int(value))
-        # self.bloom_filter.add_to_filter(k)
+        ru = self.uf.find(xu)
+        rv = self.uf.find(xv)
 
-        if self.graph.check_cycle():
-            self.table |= {k: value}
+        # Ребро внутри одной компоненты => замкнули цикл
+        if ru == rv:
+            self.table[key] = value
             self.construct()
-            print("Reconstruct")
-            # Потребовалось перестроение структуры (замкнулся цикл этим ребром)
             return
 
-        # TODO: на уровне идеи
-        # В рамках одной компоненты связности выполнить dfs обход в две стороны и понять, в какую выгоднее перекрашивать
-        # идти.
-        # Предвариетельно проверить через search, что нужна перекраска. Много кейсов, когда это не требуется
-        # Например, первый вариант - перекрас dfs по добавленному ребру, а второй - по какому-то другому, соединяющему u v компоненты
+        # Текущая "ошибка" на новом ребре
+        current = self.a[u] ^ self.b[v]
+        delta = current ^ t
 
-        # Ребро успешно добавлено в структуру.
-        # 1. Выбираем наименьшую компоненту связности, если соединяются различные
-        # 2. Обходим по DFS всю компоненту и перекрашвиаем её
+        # Перекрашиваем меньшую компоненту
+        if self.uf.size[ru] <= self.uf.size[rv]:
+            self._xor_component(ru, delta)
+        else:
+            self._xor_component(rv, delta)
 
-        self.metrics.inc("memory_count")
-        self.metrics.inc("memory_count")
-        a_value = self.get_value(self.a, u_node)
-        b_value = self.get_value(self.b, v_node)
+        # Теперь ребро корректно
+        self.graph.add_edge(u, v, t)
+        self.uf.union(xu, xv)
+        self.table[key] = value
 
-        if a_value ^ b_value == int(value):
-            self.table |= {k: value}
-            return  # Вставка прошла успешно, ребро связывает вершины с установелнными корректными индексами в бит массивах
+   
+    def delete(self, key: str) -> bool:
+        """Удалить ключ из структуры.
 
-        if u_node_sig not in old_vertexes and v_node_sig not in old_vertexes:
-            # Ребро образует новую компоненту связности => установка аналогична этапу construct
-            self.set_value(self.a, u_node, 0)
-            self.set_value(self.b, v_node, int(value))
-
-            self.metrics.inc("memory_count")
-            self.metrics.inc("memory_count")
-
-            # обновляем таблицу на control structure и публикуем новую query 
-            self.table |= {k: value}
-            self._publish_query()
-            return
-        if u_node_sig not in old_vertexes:
-            # В текущей компоненте связности появляется вершина u, которая ранее в ней не была => можем вычислить значение
-            self.set_value(self.a, u_node, b_value ^ int(value))
-            self.metrics.inc("memory_count")
-            
-            # обновляем таблицу на control structure и публикуем новую query 
-            self.table |= {k: value}
-            self._publish_query()
-            return
-        if v_node_sig not in old_vertexes:
-            # В текущей компоненте связности появляется вершина v, которая ранее в ней не была => можем вычислить значение
-            self.set_value(self.b, v_node, a_value ^ int(value))
-            self.metrics.inc("memory_count")
-            
-            # обновляем таблицу на control structure и публикуем новую query 
-            self.table |= {k: value}
-            self._publish_query()
-            return
-
-        # Наиболее неприятный случай, когда ребро начало соединять уже установленные вершины и оно некорректно
-        # Значит, нужна перекраска новой компоненты
-        vertexes, components, num, traversal = self.graph.connected_components()
-
-        # Находим номер полученной компоненты связности
-        component_number = components["U_" + str(u_node)]
-        visited = set()
-        # Начинаем dfs обход только этих вершин
-
-        def dfs(vertex: str, component_number: int) -> None:
-            """Рекурсивная функция обхода графа в порядке DFS
-
-            :params
-            vertexe - название веришины вида U_<ind> / V_<ind>
-            component_number - номер исследуемой компоненты связности
-            """
-
-            visited.add(vertex)
-
-            # Из этой вершины начинаем идти во все, которые с ней соединены
-            for u in self.graph.edges_dict[vertex]:
-                if u not in visited:  # Данную вершину пока что не обошли
-                    # print(vertex, u)
-
-                    u_ind = None
-                    v_ind = None
-                    change = False
-
-                    if u.startswith('U'):
-                        u_ind = int(u.split('_')[1])
-                        v_ind = int(vertex.split('_')[1])
-                    else:
-                        u_ind = int(vertex.split('_')[1])
-                        v_ind = int(u.split('_')[1])
-                        change = True
-
-                    self.metrics.inc("memory_count")
-                    self.metrics.inc("memory_count")
-                    a_value = self.get_value(self.a, u_ind)
-                    b_value = self.get_value(self.b, v_ind)
-
-                    # Если бит не соответствет, перекрашиваем
-                    if a_value ^ b_value != self.graph.adj_list[(u_ind, v_ind)]:
-
-                        # Что именно перекрашивает зависит от стороны, с которой подошли к вершине
-                        # Перекрашиваем ту вершину, которая ещё не в visited
-                        if not change:
-                            self.set_value(self.a, u_ind, b_value ^ self.graph.adj_list[(u_ind, v_ind)])
-                            self.metrics.inc("memory_count")
-                        else:
-                            self.set_value(self.b, v_ind, a_value ^ self.graph.adj_list[(u_ind, v_ind)])
-                            self.metrics.inc("memory_count")
-                    dfs(u, component_number)
-
-        # Предположительно обход одной компоненты связности не приводит к сильному ускорению работы алгоритма
-        # Сейчас обходим полностью всю связывающую компоненту новую и проставляем заново все биты в ней
-        # Начинать можно с произвольной новой вершины, dfs обход оставляет в рамках той же компоненты связности
-        dfs("U_" + str(u_node), component_number)
-        
-        # обновляем таблицу на control structure и публикуем новую query 
-        self.table |= {k: value}
-        self._publish_query()
-
-
-    def delete(self, key: str):
-        """Delete key from Othello structure"""
-
-        # Если ключа нет, то я не могу удалять. Потенциально могу задеть те биты, которые задействованы в вычислении другихх ключей
-        #if self.bloom_filter.check_is_not_in_filter(key):
-        #    return None
+        Возвращает:
+            True, если ключ был удалён.
+            False, если ключ отсутствовал.
+        """
+        if key not in self.table:
+            return False
 
         int_key = FastHash.convert_to_int_key(key)
         u_node = self.ha(int_key)
         v_node = self.hb(int_key)
+
         self.metrics.inc("hash_calls_total")
         self.metrics.inc("hash_calls_total")
 
-        if self.graph.remove_edge(u_node, v_node):
-            del self.table[key]
+        removed = self.graph.remove_edge(u_node, v_node)
+        if not removed:
+            return False
+
+        del self.table[key]
+        self._uf_dirty = True
+        return True

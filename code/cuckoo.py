@@ -14,15 +14,16 @@ class CuckooHash(HashAlgorithmBase):
         self.t1 = [None] * self.m
         self.t2 = [None] * self.m
 
-        self.seed1 = random.getrandbits(64) if seed1 is None else seed1
-        self.seed2 = random.getrandbits(64) if seed2 is None else seed2
-
         self._build_hashes()
 
     def _build_hashes(self) -> None:
         """Пересоздать хеш-функции под текущий размер таблиц."""
-        self._h1 = FastHash(self.seed1, self.m)
-        self._h2 = FastHash(self.seed2, self.m)
+        
+        seed1 = random.getrandbits(64)
+        seed2 = random.getrandbits(64)
+
+        self._h1 = FastHash(seed1, self.m)
+        self._h2 = FastHash(seed2, self.m)
 
     @staticmethod
     def _key_to_int(key) -> int:

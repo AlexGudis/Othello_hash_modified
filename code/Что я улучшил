@@ -11,3 +11,22 @@
 
 Ещё можно добавить возможность бесконечного расширения Отелло за счёт пересоздания новой сущности, то есть
 можно будет бесконечно добавлять что либо в Отелло как в Кукушку
+
+
+
+(code) alexgud@alexgud-NBD-WXX9:~/study/msu/science_exploration/Othello_hash_modified/code$ python3 main.py 
+7932967
+Generated Othello structure with ma=39900, mb=39900, hash_size=14
+Correct is 10000 of 10000
+Correct is 11000 of 11000
+Time spent: 0.01709934163093567
+4
+(code) 
+(code) alexgud@alexgud-NBD-WXX9:~/study/msu/science_exploration/Othello_hash_modified/code$ python3 main.py 
+20365457
+Generated Othello structure with ma=39900, mb=39900, hash_size=14
+Correct is 10000 of 10000
+Correct is 11000 of 11000
+Time spent: 0.017223734378814696
+0
+(code) 

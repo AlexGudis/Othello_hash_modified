@@ -25,12 +25,31 @@ def make_find_workload(existing_keys, size: int):
     return [("find", random.choice(existing_keys), None) for _ in range(size)]
 
 
+# def make_delete_workload(existing_keys, size: int):
+#     return [("delete", random.choice(existing_keys), None) for _ in range(size)]
+
 def make_delete_workload(existing_keys, size: int):
-    return [("delete", random.choice(existing_keys), None) for _ in range(size)]
+    size = min(size, len(existing_keys))
+    keys = random.sample(existing_keys, size)
+    return [("delete", key, None) for key in keys]
 
 
-def make_insert_workload(size: int):
-    return [("insert", *generate_kv()) for _ in range(size)]
+def make_insert_workload(existing_table, size: int):
+    used_keys = set(existing_table.keys())
+    ops = []
+
+    while len(ops) < size:
+        key, value = generate_kv()
+        if key in used_keys:
+            continue
+        used_keys.add(key)
+        ops.append(("insert", key, value))
+
+    return ops
+
+
+# def make_insert_workload(size: int):
+#     return [("insert", *generate_kv()) for _ in range(size)]
 
 
 def make_real_workload(
@@ -343,40 +362,44 @@ def experiment(
                 avg_idx,
             )
 
-            # Тестирование времени построения структуры
-            algo, build_time = construct_structures(default_table, algorithm_factory)
-            total_hash_calls_construct += algo.metrics_snapshot()["hash_calls_total"]
-            total_memory_counts_construction += algo.metrics_snapshot()["memory_count"]
+            # Тестирование построения структуры
+            algo_build, build_time = construct_structures(default_table, algorithm_factory)
+            total_hash_calls_construct += algo_build.metrics_snapshot()["hash_calls_total"]
+            total_memory_counts_construction += algo_build.metrics_snapshot()["memory_count"]
             # Время построения структуры
             total_construct_time += build_time
+
+            # Объём занимаемой памяти
+            measured_obj = get_measured_object(algo_build, measure_query_only=measure_query_only)
+            total_memory += deep_getsizeof(measured_obj)
             
 
 
             # Тестирование операции find
             # Время заданного числа операций поиска (Ключ присутствует)
             # TODO: корректность операций поиска (Важно для Отелло)
+            algo_find, _ = construct_structures(default_table, algorithm_factory)
             find_ops = make_find_workload(list(default_table.keys()), find_ops_count)
-
-            find_results = runner.run(algo, find_ops)
+            find_results = runner.run(algo_find, find_ops)
             total_find_time += find_results["elapsed_sec"]
             total_hash_calls_find += find_results["hash_calls_total"]
             total_memory_counts_find += find_results["memory_count"]
 
+
             # Тестирование операции delete
+            algo_delete, _ = construct_structures(default_table, algorithm_factory)
             delete_ops = make_delete_workload(list(default_table.keys()), int(n * delete_coeff))
-            delete_results = runner.run(algo, delete_ops)
+            delete_results = runner.run(algo_delete, delete_ops)
             total_hash_calls_delete += delete_results["hash_calls_total"]
             total_memory_counts_delete += delete_results["memory_count"]
 
-            # Объём занимаемой памяти
-            measured_obj = get_measured_object(algo, measure_query_only=measure_query_only)
-            total_memory += deep_getsizeof(measured_obj)
-
 
             # Тестирование операции вставка
-            insert_ops = make_insert_workload(int(n * insert_coeff))
-            insert_results = runner.run(algo, insert_ops)
+            algo_insert, _ = construct_structures(default_table, algorithm_factory)
+            insert_ops = make_insert_workload(default_table, int(n * insert_coeff))
+            insert_results = runner.run(algo_insert, insert_ops)
             total_insert_time += insert_results["elapsed_sec"]
+
 
 
         avg_memory = total_memory / avg_factor
@@ -769,6 +792,7 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir:
             "title": "Объём занимаемой памяти",
             "filename": "memory.png",
             "y_log": True,
+            "annotate": True,
         },
         {
             "key": "construction_time",
@@ -899,9 +923,9 @@ if __name__ == "__main__":
     linear_check = False
     if sintetic_test:
         # sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
-        sizes = [1000, 2000, 4000, 6000, 8000]
+        sizes = [1000, 2000, 4000, 6000, 8000, 10_000, 15_000, 20_000, 30_000, 40_000, 50_000]
         # sizes = [100, 500, 1000]
-        avg_factor = 3
+        avg_factor = 5
         find_ops_count = 50_000
         dataset_dir = Path("datasets")
         output_dir = create_output_dir()
