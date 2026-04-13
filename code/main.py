@@ -46,7 +46,7 @@ end_t = time()
 keys, values = get_keys(json_dict)
 cnt = test_correct(pog, json_dict, keys)
 print(f'Correct is {cnt} of {len(json_dict)}')
-print(f"Time spent: {(end_t - start_t)}")
+print(f"Time spent: {(end_t - start_t) / int(n * 0.1)}")
 
 print(pog.find("1-2"))
 

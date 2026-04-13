@@ -109,8 +109,6 @@ def make_real_workload(
 
     return ops, meta
 
-    
-
 
 def workload_file_path(dataset_dir: Path, n: int, avg_idx: int, profile_name: str) -> Path:
     return dataset_dir / f"workload_{profile_name}_n{n}_avg{avg_idx}.json"
@@ -297,37 +295,46 @@ def experiment(
     avg_factor,
     find_ops_count,
     delete_coeff,
+    insert_coeff,
     *,
     measure_query_only=False,
 ):
     runner = BenchmarkRunner()
 
     x_sizes = []
-    y_find_time = []
     y_memory_bytes = []
+
     y_structure_construction_time = []
     y_hash_calls_construction = []
     y_memory_counts_construction = []
 
+    y_find_time = []
     y_hash_calls_find = []
     y_memory_counts_find = []
 
     y_hash_calls_delete = []
     y_memory_counts_delete = []
 
+    y_insert_time = []
+
+
+
 
     for n in sizes:
-        total_find_time = 0.0
         total_memory = 0
+
         total_construct_time = 0.0
         total_hash_calls_construct = 0
         total_memory_counts_construction = 0
         
+        total_find_time = 0.0
         total_hash_calls_find = 0
         total_memory_counts_find = 0
 
         total_hash_calls_delete = 0
         total_memory_counts_delete = 0
+
+        total_insert_time = 0
 
         for avg_idx in range(avg_factor):
             default_table = get_or_create_table(
@@ -336,6 +343,7 @@ def experiment(
                 avg_idx,
             )
 
+            # Тестирование времени построения структуры
             algo, build_time = construct_structures(default_table, algorithm_factory)
             total_hash_calls_construct += algo.metrics_snapshot()["hash_calls_total"]
             total_memory_counts_construction += algo.metrics_snapshot()["memory_count"]
@@ -354,8 +362,6 @@ def experiment(
             total_hash_calls_find += find_results["hash_calls_total"]
             total_memory_counts_find += find_results["memory_count"]
 
-
-
             # Тестирование операции delete
             delete_ops = make_delete_workload(list(default_table.keys()), int(n * delete_coeff))
             delete_results = runner.run(algo, delete_ops)
@@ -367,7 +373,12 @@ def experiment(
             total_memory += deep_getsizeof(measured_obj)
 
 
-        avg_find_time = total_find_time / avg_factor
+            # Тестирование операции вставка
+            insert_ops = make_insert_workload(int(n * insert_coeff))
+            insert_results = runner.run(algo, insert_ops)
+            total_insert_time += insert_results["elapsed_sec"]
+
+
         avg_memory = total_memory / avg_factor
 
         avg_structure_construction_time = total_construct_time / avg_factor
@@ -375,25 +386,30 @@ def experiment(
         avg_memory_counts_construction = total_memory_counts_construction / avg_factor
 
         # Нас интересует число вызовов хеш-функций на одну операцию, а не на какое-то их количество
+        avg_find_time = total_find_time / avg_factor
         avg_hash_calls_find = total_hash_calls_find / avg_factor / find_ops_count
         avg_memory_counts_find = total_memory_counts_find / avg_factor / find_ops_count
 
         avg_hash_calls_delete = total_hash_calls_delete / avg_factor / int(n * delete_coeff)
         avg_memory_counts_delete = total_memory_counts_delete / avg_factor / int(n * delete_coeff)
 
+        avg_insert_time = total_insert_time / avg_factor
+
         x_sizes.append(n)
-        y_find_time.append(avg_find_time)
         y_memory_bytes.append(avg_memory)
 
         y_structure_construction_time.append(avg_structure_construction_time)
         y_hash_calls_construction.append(avg_hash_calls_construct)
         y_memory_counts_construction.append(avg_memory_counts_construction)
 
+        y_find_time.append(avg_find_time)
         y_hash_calls_find.append(avg_hash_calls_find)
         y_memory_counts_find.append(avg_memory_counts_find)
 
         y_hash_calls_delete.append(avg_hash_calls_delete)
         y_memory_counts_delete.append(avg_memory_counts_delete)
+
+        y_insert_time.append(avg_insert_time)
 
         print(
             f"N={n:6d} | "
@@ -413,6 +429,7 @@ def experiment(
         "memory_count_find": y_memory_counts_find,
         "hash_calls_delete": y_hash_calls_delete,
         "memory_count_delete": y_memory_counts_delete,
+        "insert_time_sec": y_insert_time,
         # Проверка корректности поиска
     }
 
@@ -796,6 +813,12 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir:
             "title": "Обращения к памяти при удалении",
             "filename": "memory_count_delete.png",
         },
+        {
+            "key": "insert_time_sec",
+            "ylabel": "Время серии вставок, сек",
+            "title": f"Время вставки правил",
+            "filename": "time_insert.png",
+        },
     ]
 
     for cfg in plots:
@@ -873,11 +896,11 @@ if __name__ == "__main__":
     random.seed(42)
 
     sintetic_test = True
-    linear_check = True
+    linear_check = False
     if sintetic_test:
         # sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
-        # sizes = [1000, 2000, 4000, 10000]
-        sizes = [100, 500, 1000]
+        sizes = [1000, 2000, 4000, 6000, 8000]
+        # sizes = [100, 500, 1000]
         avg_factor = 3
         find_ops_count = 50_000
         dataset_dir = Path("datasets")
@@ -889,6 +912,7 @@ if __name__ == "__main__":
             avg_factor=avg_factor,
             find_ops_count=find_ops_count,
             delete_coeff=0.1,
+            insert_coeff=0.1,
             measure_query_only=False,
         )
 
@@ -898,6 +922,7 @@ if __name__ == "__main__":
             avg_factor=avg_factor,
             find_ops_count=find_ops_count,
             delete_coeff=0.1,
+            insert_coeff=0.1,
             measure_query_only=True,
         )
 
@@ -910,6 +935,7 @@ if __name__ == "__main__":
                 avg_factor=avg_factor,
                 find_ops_count=find_ops_count,
                 delete_coeff=0.1,
+                insert_coeff=0.1,
                 measure_query_only=False,
             )
             save_json(results_linear, output_dir / "results_linear_search.json")
