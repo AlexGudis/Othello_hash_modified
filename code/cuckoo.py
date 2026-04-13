@@ -85,7 +85,22 @@ class CuckooHash(HashAlgorithmBase):
         return False
 
     def insert(self, key, value):
-        if self.find(key) is not None:
+        value_check = self.find(key)
+        if value_check is not None:
+            # Такое правило уже есть в нашей структуре => обновляем значение
+            i = self.h1(key)
+            self.metrics.inc("hash_calls_total")
+            self.metrics.inc("memory_count")
+            if self.t1[i] is not None and self.t1[i][0] == key:
+                self.t1[i] = (key, value)
+
+            j = self.h2(key)
+            self.metrics.inc("hash_calls_total")
+            self.metrics.inc("memory_count")
+            if self.t2[j] is not None and self.t2[j][0] == key:
+                self.t2[j] = (key, value)
+
+
             return False
 
         # Суммарная загрузка <= 0.5

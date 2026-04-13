@@ -220,6 +220,11 @@ def deep_getsizeof(obj, seen=None):
 
 class BenchmarkRunner:
     def run(self, algorithm, ops):
+        '''
+        insert - чистая вставка (ранее такого правила не было в таблице)
+        upsert - грязная вставка (правило ранее было в таблице, новый порт)
+        '''
+
         algorithm.reset_metrics()
 
         start = perf_counter()
@@ -232,7 +237,7 @@ class BenchmarkRunner:
             elif op == "delete":
                 algorithm.delete(key)
             elif op == "upsert":
-                algorithm.delete(key)
+                # algorithm.delete(key)
                 algorithm.insert(key, value)
             else:
                 raise ValueError(f"Unknown operation: {op}")
@@ -775,14 +780,14 @@ def plot_metric(
 
     if annotate:
         for x, y in zip(sizes, series1):
-            ax.annotate(f"{y:.2f}", (x, y), textcoords="offset points", xytext=(0, 6), ha="center", fontsize=8)
+            ax.annotate(f"{y:.4f}", (x, y), textcoords="offset points", xytext=(0, 6), ha="center", fontsize=8)
 
         for x, y in zip(sizes, series2):
-            ax.annotate(f"{y:.2f}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
+            ax.annotate(f"{y:.4f}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
         
         if series3 is not None:
             for x, y in zip(sizes, series3):
-                ax.annotate(f"{y:.2f}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
+                ax.annotate(f"{y:.4f}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
 
 
     fig.tight_layout()
@@ -921,7 +926,7 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir:
         )
 
 
-def build_realistic_plots(results_cuckoo, results_othello, output_dir: Path):
+def build_realistic_plots(results_cuckoo, results_othello, results_linear, output_dir: Path, linear_check=False):
     sizes = results_cuckoo["sizes"]
 
     plots = [
@@ -936,17 +941,25 @@ def build_realistic_plots(results_cuckoo, results_othello, output_dir: Path):
     for metric_key, ylabel, title, filename, x_log, y_log in plots:
         series1 = results_cuckoo[metric_key]
         series2 = results_othello[metric_key]
+        series3 = None
+        if linear_check:
+            series3 = results_linear[metric_key]
+
 
         if metric_key == "memory_bytes":
             series1 = [x / 1024 for x in series1]
             series2 = [x / 1024 for x in series2]
+            if linear_check:
+                series3 = [x / 1024 for x in series3]
 
         plot_metric(
             sizes,
             series1,
             series2,
+            series3,
             label1="CuckooHash",
             label2="Pog/Othello",
+            label3="LinearSearch",
             xlabel="Размер множества ключей",
             ylabel=ylabel,
             title=title,
@@ -962,7 +975,7 @@ def build_realistic_plots(results_cuckoo, results_othello, output_dir: Path):
 if __name__ == "__main__":
     random.seed(42)
 
-    sintetic_test = True
+    sintetic_test = False
     linear_check = False
     insert_coeff=0.1
     if sintetic_test:
@@ -1026,15 +1039,16 @@ if __name__ == "__main__":
 
         print(f"\nРезультаты сохранены в папку: {output_dir}")
     else:
-        sizes = [30, 40, 50, 60]
+        # sizes = [30, 40, 50, 60]
+        sizes = [30, 50, 100, 300, 500, 800, 1000, 1500, 2000, 3000, 4000]
         avg_factor = 3
         dataset_dir = Path("datasets")
         output_dir = create_output_dir()
 
         realistic_profile = {
-            "duration_sec": 2,
-            "find_rate": 240_000,
-            "upsert_rate": 2200,
+            "duration_sec": 1,
+            "find_rate": 170_000,
+            "upsert_rate": 4000,
             "insert_rate": 1,
         }
 
@@ -1062,27 +1076,32 @@ if __name__ == "__main__":
             measure_query_only=True,
         )
 
-        results_linear_real = experiment_realistic(
-            algorithm_factory=LinearSearchTable,
-            sizes=sizes,
-            avg_factor=avg_factor,
-            dataset_dir=dataset_dir,
-            duration_sec=realistic_profile["duration_sec"],
-            find_rate=realistic_profile["find_rate"],
-            upsert_rate=realistic_profile["upsert_rate"],
-            insert_rate=realistic_profile["insert_rate"],
-            measure_query_only=False,
-        )
+        results_linear_real = None
+        if linear_check:
+            results_linear_real = experiment_realistic(
+                algorithm_factory=LinearSearchTable,
+                sizes=sizes,
+                avg_factor=avg_factor,
+                dataset_dir=dataset_dir,
+                duration_sec=realistic_profile["duration_sec"],
+                find_rate=realistic_profile["find_rate"],
+                upsert_rate=realistic_profile["upsert_rate"],
+                insert_rate=realistic_profile["insert_rate"],
+                measure_query_only=False,
+            )
+            save_json(results_linear_real, output_dir / "results_linear_realistic.json")
 
         save_json(results_cuckoo_real, output_dir / "results_cuckoo_realistic.json")
         save_json(results_othello_real, output_dir / "results_pog_realistic.json")
-        save_json(results_linear_real, output_dir / "results_linear_realistic.json")
         save_json(realistic_profile, output_dir / "realistic_profile.json")
+
 
         build_realistic_plots(
             results_cuckoo_real,
             results_othello_real,
+            results_linear_real,
             output_dir=output_dir,
+            linear_check=linear_check
         )
 
         print(f"\nРезультаты реального эксперимента сохранены в папку: {output_dir}")

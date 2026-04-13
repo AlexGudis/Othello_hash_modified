@@ -1,0 +1,6 @@
+{
+  "duration_sec": 1,
+  "find_rate": 170000,
+  "upsert_rate": 1000,
+  "insert_rate": 1
+}

@@ -8,6 +8,7 @@ from typing import Callable
 from abstracts import HashAlgorithmBase
 import random
 import numpy as np
+from collections import deque
 
 VALUE_DTYPE = np.uint32
 INDEX_DTYPE = np.intp
@@ -335,6 +336,12 @@ class PogControl(HashAlgorithmBase):
 
 
     def insert(self, key: str, value: str) -> None:
+
+        # В случае добавления уже существующего ключа по сути операция обновления
+        if key in self.table:
+            self.update(key, value)
+            return
+
         if self._uf_dirty:
             self._rebuild_union_find()
 
@@ -409,4 +416,120 @@ class PogControl(HashAlgorithmBase):
 
         del self.table[key]
         self._uf_dirty = True
+        return True
+    
+
+
+    def _xor_vertices(
+        self,
+        u_members: list[int],
+        v_members: list[int],
+        delta: int,
+    ) -> None:
+        """Делаем XOR по полученным вершинам для update"""
+        delta_t = self._to_value_dtype(delta)
+        if delta_t == 0:
+            return
+
+        if u_members:
+            for _ in range(len(u_members)):
+                self.metrics.inc("memory_count")
+            self.a[np.asarray(u_members, dtype=np.intp)] ^= delta_t
+
+        if v_members:
+            for _ in range(len(v_members)):
+                self.metrics.inc("memory_count")
+            self.b[np.asarray(v_members, dtype=np.intp)] ^= delta_t
+
+
+    def _collect_side_after_cut(
+        self,
+        u_index: int,
+        v_index: int,
+        *,
+        start_from_u: bool,
+    ) -> tuple[list[int], list[int]]:
+        """Вернуть одну сторону компоненты после удаления ребра (u_index, v_index).
+            Граф не изменяется: при обходе просто запрещается переход через это ребро.
+            Args:
+                u_index: Индекс вершины в доле U.
+                v_index: Индекс вершины в доле V.
+                start_from_u: Если True, собрать сторону от U_u_index, иначе от V_v_index.
+            Returns:
+                Кортеж (u_members, v_members) — индексы вершин выбранной стороны.
+        """
+        
+        blocked_u = f"U_{u_index}"
+        blocked_v = f"V_{v_index}"
+        start = blocked_u if start_from_u else blocked_v
+
+        queue: deque[str] = deque([start])
+        visited: set[str] = {start}
+
+        u_members: list[int] = []
+        v_members: list[int] = []
+
+        while queue:
+            cur = queue.popleft()
+
+            if cur.startswith("U_"):
+                u_members.append(int(cur[2:]))
+            else:
+                v_members.append(int(cur[2:]))
+
+            for nxt in self.graph.edges_dict.get(cur, ()):
+                # Запрещаем проходить именно через обновляемое ребро
+                if (cur == blocked_u and nxt == blocked_v) or (cur == blocked_v and nxt == blocked_u):
+                    continue
+
+                if nxt not in visited:
+                    visited.add(nxt)
+                    queue.append(nxt)
+
+        return u_members, v_members
+    
+
+
+    def update(self, key: str, value: str) -> bool:
+        """
+            Обновить значение существующего ключа без перестройки Othello.
+
+            По сути это аналог метода alter из статьи:
+            ребро (u, v) уже есть в ацикличном графе, поэтому новое ребро не добавляется.
+            Вместо этого XOR-значения меняются только на одной стороне разреза,
+            который получается, если "мысленно" удалить ребро (u, v).
+        """
+        new_value = self._to_value_dtype(value)
+
+        int_key = FastHash.convert_to_int_key(key)
+        u = self.ha(int_key)
+        v = self.hb(int_key)
+        self.metrics.inc("hash_calls_total")
+        self.metrics.inc("hash_calls_total")
+        edge = (u, v)
+        old_value = self.a[u] ^ self.b[v]
+        self.metrics.inc("memory_count")
+        self.metrics.inc("memory_count")
+        delta = int(old_value ^ new_value)
+
+        # Значение и так уже такое же
+        if delta == 0:
+            self.table[key] = value
+            self.graph.adj_list[edge] = int(new_value)
+            return True
+
+        # После удаления ребра дерево распадается на 2 стороны.
+        # Выберем меньшую, чтобы менять меньше ячеек.
+        left_u, left_v = self._collect_side_after_cut(u, v, start_from_u=True)
+        right_u, right_v = self._collect_side_after_cut(u, v, start_from_u=False)
+
+        if len(left_u) + len(left_v) <= len(right_u) + len(right_v):
+            self._xor_vertices(left_u, left_v, delta)
+        else:
+            self._xor_vertices(right_u, right_v, delta)
+
+        # Обновляем control structure
+        self.graph.adj_list[edge] = int(new_value)
+        self.table[key] = value
+
         return True

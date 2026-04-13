@@ -49,3 +49,7 @@ print(f'Correct is {cnt} of {len(json_dict)}')
 print(f"Time spent: {(end_t - start_t) / int(n * 0.1)}")
 
 
+pog.insert("7C:D9:F6:56:FA:F9-2674", "3")
+print(pog.find("7C:D9:F6:56:FA:F9-2674"))
+
+
