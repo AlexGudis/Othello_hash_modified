@@ -335,7 +335,10 @@ def experiment(
     y_memory_counts_delete = []
 
     y_insert_time = []
-
+    y_hash_calls_insert = []
+    y_memory_counts_insert = []
+    y_reconstruction_count_insert = []
+    
 
 
 
@@ -354,6 +357,9 @@ def experiment(
         total_memory_counts_delete = 0
 
         total_insert_time = 0
+        total_hash_calls_insert = 0
+        total_memory_counts_insert = 0
+        total_reconstruction_count_insert = 0
 
         for avg_idx in range(avg_factor):
             default_table = get_or_create_table(
@@ -399,6 +405,9 @@ def experiment(
             insert_ops = make_insert_workload(default_table, int(n * insert_coeff))
             insert_results = runner.run(algo_insert, insert_ops)
             total_insert_time += insert_results["elapsed_sec"]
+            total_hash_calls_insert += insert_results["hash_calls_total"]
+            total_memory_counts_insert += insert_results["memory_count"]
+            total_reconstruction_count_insert += insert_results["reconstruction_count"]
 
 
 
@@ -417,6 +426,10 @@ def experiment(
         avg_memory_counts_delete = total_memory_counts_delete / avg_factor / int(n * delete_coeff)
 
         avg_insert_time = total_insert_time / avg_factor
+        avg_hash_calls_insert = total_hash_calls_insert / avg_factor / int(n * insert_coeff)
+        avg_memory_counts_insert = total_memory_counts_insert / avg_factor / int(n * insert_coeff)
+        avg_reconstruction_count_insert = total_reconstruction_count_insert / avg_factor
+
 
         x_sizes.append(n)
         y_memory_bytes.append(avg_memory)
@@ -433,6 +446,9 @@ def experiment(
         y_memory_counts_delete.append(avg_memory_counts_delete)
 
         y_insert_time.append(avg_insert_time)
+        y_hash_calls_insert.append(avg_hash_calls_insert)
+        y_memory_counts_insert.append(avg_memory_counts_insert)
+        y_reconstruction_count_insert.append(avg_reconstruction_count_insert)
 
         print(
             f"N={n:6d} | "
@@ -453,6 +469,9 @@ def experiment(
         "hash_calls_delete": y_hash_calls_delete,
         "memory_count_delete": y_memory_counts_delete,
         "insert_time_sec": y_insert_time,
+        "hash_calls_insert": y_hash_calls_insert,
+        "memory_count_insert": y_memory_counts_insert,
+        "reconstruction_count_insert": y_reconstruction_count_insert,
         # Проверка корректности поиска
     }
 
@@ -775,7 +794,7 @@ def plot_metric(
 # 8. Построение конкретных графиков
 # ============================================================
 
-def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir: Path, find_ops_count, linear_check=False):
+def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir: Path, find_ops_count, insert_coeff, linear_check=False):
     sizes = results_cuckoo["sizes"]
 
     plots = [
@@ -842,6 +861,24 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir:
             "ylabel": "Время серии вставок, сек",
             "title": f"Время вставки правил",
             "filename": "time_insert.png",
+        },
+        {
+            "key": "hash_calls_insert",
+            "ylabel": "Число вызовов хеш-функций",
+            "title": f"Хеш-функции при вставке",
+            "filename": "hash_calls_insert.png",
+        },
+        {
+            "key": "memory_count_insert",
+            "ylabel": "Число обращений к памяти",
+            "title": "Обращения к памяти при вставке",
+            "filename": "memory_count_insert.png",
+        },
+        {
+            "key": "reconstruction_count_insert",
+            "ylabel": "Число перестроений",
+            "title": f"Число перестроений при увеличении числа ключей на {int(insert_coeff * 100)}%",
+            "filename": "reconstruction_count_insert.png",
         },
     ]
 
@@ -921,10 +958,12 @@ if __name__ == "__main__":
 
     sintetic_test = True
     linear_check = False
+    insert_coeff=0.1
     if sintetic_test:
         # sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
-        sizes = [1000, 2000, 4000, 6000, 8000, 10_000, 15_000, 20_000, 30_000, 40_000, 50_000]
+        # sizes = [1000, 2000, 4000, 6000, 8000, 10_000, 15_000, 20_000, 30_000, 40_000, 50_000]
         # sizes = [100, 500, 1000]
+        sizes = [1000, 2000, 4000, 6000, 8000, 10_000, 15_000, 20_000]
         avg_factor = 5
         find_ops_count = 50_000
         dataset_dir = Path("datasets")
@@ -936,7 +975,7 @@ if __name__ == "__main__":
             avg_factor=avg_factor,
             find_ops_count=find_ops_count,
             delete_coeff=0.1,
-            insert_coeff=0.1,
+            insert_coeff=insert_coeff,
             measure_query_only=False,
         )
 
@@ -946,7 +985,7 @@ if __name__ == "__main__":
             avg_factor=avg_factor,
             find_ops_count=find_ops_count,
             delete_coeff=0.1,
-            insert_coeff=0.1,
+            insert_coeff=insert_coeff,
             measure_query_only=True,
         )
 
@@ -959,7 +998,7 @@ if __name__ == "__main__":
                 avg_factor=avg_factor,
                 find_ops_count=find_ops_count,
                 delete_coeff=0.1,
-                insert_coeff=0.1,
+                insert_coeff=insert_coeff,
                 measure_query_only=False,
             )
             save_json(results_linear, output_dir / "results_linear_search.json")
@@ -975,6 +1014,7 @@ if __name__ == "__main__":
             results_linear,
             output_dir=output_dir,
             find_ops_count=find_ops_count,
+            insert_coeff=insert_coeff,
             linear_check=linear_check
         )
 

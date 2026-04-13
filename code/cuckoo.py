@@ -90,6 +90,7 @@ class CuckooHash(HashAlgorithmBase):
 
         # Суммарная загрузка <= 0.5
         if self.n >= self.m:
+            self.metrics.inc("reconstruction_count")
             self.resize(2 * self.m)
 
         cur = (key, value)

@@ -7,6 +7,7 @@ class HashMetrics:
         self.counters = {
             "hash_calls_total": 0,
             "memory_count": 0,
+            "reconstruction_count": 0
         }
 
     def inc(self, name: str, value: int = 1) -> None:
@@ -19,6 +20,7 @@ class HashMetrics:
         self.counters = {
             "hash_calls_total": 0,
             "memory_count": 0,
+            "reconstruction_count": 0
         }
 
 

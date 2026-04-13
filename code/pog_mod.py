@@ -146,9 +146,11 @@ class PogControl(HashAlgorithmBase):
             return
 
         for u in self.uf.members_u[root]:
+            self.metrics.inc("memory_count")
             self.a[u] ^= delta
 
         for v in self.uf.members_v[root]:
+            self.metrics.inc("memory_count")
             self.b[v] ^= delta
 
 
@@ -248,10 +250,10 @@ class PogControl(HashAlgorithmBase):
             v_mark = "V_" + str(v_ind)
             t_k = hash_mapping[(u_ind, v_ind)]
 
-            if u_mark not in computed_vertexes and v_mark not in computed_vertexes:
-                self.metrics.inc("memory_count")
-                self.metrics.inc("memory_count")
 
+            self.metrics.inc("memory_count")
+            self.metrics.inc("memory_count")
+            if u_mark not in computed_vertexes and v_mark not in computed_vertexes:
                 self.a[u_ind] = 0
                 self.b[v_ind] = t_k
 
@@ -260,13 +262,11 @@ class PogControl(HashAlgorithmBase):
 
             elif u_mark not in computed_vertexes:
                 b_value = self.b[v_ind]
-                self.metrics.inc("memory_count")
                 self.a[u_ind] = b_value ^ t_k
                 computed_vertexes.add(u_mark)
 
             elif v_mark not in computed_vertexes:
                 a_value = self.a[u_ind]
-                self.metrics.inc("memory_count")
                 self.b[v_ind] = a_value ^ t_k                
                 computed_vertexes.add(v_mark)
             else:
@@ -327,6 +327,7 @@ class PogControl(HashAlgorithmBase):
         if edge in self.graph.adj_list:
             self.table[key] = value
             self.construct()
+            self.metrics.inc("reconstruction_count")
             return
 
         xu = self.uf.make_u(u)
@@ -339,11 +340,14 @@ class PogControl(HashAlgorithmBase):
         if ru == rv:
             self.table[key] = value
             self.construct()
+            self.metrics.inc("reconstruction_count")
             return
 
         # Текущая "ошибка" на новом ребре
         current = self.a[u] ^ self.b[v]
         delta = current ^ t
+        self.metrics.inc("memory_count")
+        self.metrics.inc("memory_count")
 
         # Перекрашиваем меньшую компоненту
         if self.uf.size[ru] <= self.uf.size[rv]:
