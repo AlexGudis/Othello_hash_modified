@@ -2,16 +2,25 @@ from othello import Othello
 import bitarray
 import hashlib
 from common import Info
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from abstracts import HashAlgorithmBase
 
 # TODO: Вероятно, от этого в принципе придется отказаться, так как Отелло будет только одно в реальности. 
 # Отказ от фиктивной параллельности
 
-class POG:
-    def __init__(self):
+
+
+class POG_OLD(HashAlgorithmBase):
+    def __init__(self, table):
+        super().__init__()
         self.group = []
+        self.table = table
+        self.construct()
 
 
-    def search(self, key):
+    def find(self, key):
         info = Info('pog.search')
         ans = ''
         for i in range(len(self.group)):
@@ -19,6 +28,11 @@ class POG:
             ans += str(bit)
             info.hash += info_oth.hash
             info.memory += info_oth.memory
+
+            metrics_snap = self.group[i].metrics_snapshot()
+            for k, v in self.metrics.counters.items():
+                self.metrics.inc(k, metrics_snap[k])
+            
 
         #print(f'FOUND = {ans}')
 
@@ -38,20 +52,20 @@ class POG:
         return specific_table
 
 
-    def construct(self, table):
+    def construct(self):
 
         # Определяем число Отелло структур
-        max_port = max(int(v) for k,v in table.items())
+        max_port = max(int(v) for k,v in self.table.items())
         #print(max_port)
         cnt = len(bin(max_port)[2:])
         #print(cnt)
 
         for i in range(cnt):
-            n = len(table)
+            n = len(self.table)
 
             # LOADFACTOR = +-40%
-            a = bitarray.bitarray(int(n * 5)) 
-            b = bitarray.bitarray(int(n * 5))
+            a = bitarray.bitarray(int(n * 1.33)) 
+            b = bitarray.bitarray(int(n * 1.33))
             ma = len(a)
             mb = len(b)
             ha = hashlib.sha3_512
@@ -59,7 +73,7 @@ class POG:
 
             oth = Othello(ma, mb, ha, hb, a, b)
 
-            specific_table = self.generate_table(table, cnt, i)
+            specific_table = self.generate_table(self.table, cnt, i)
             
             #print(specific_table)
 
@@ -67,30 +81,44 @@ class POG:
 
             self.group.append(oth)
 
-    def insert(self, table, k, v):
+            metrics_snap = self.group[i].metrics_snapshot()
+            for k, v in self.metrics.counters.items():
+                self.metrics.inc(k, metrics_snap[k])
+
+    def insert(self, key, value):
         info = Info(type='oth_pog.insert')
 
         cnt = len(self.group)
 
-        new_v = bin(int(v))[2:]
+        new_v = bin(int(value))[2:]
         if len(new_v) != cnt:
             new_v = '0' * (cnt - len(new_v)) + new_v
 
         
         for i in range(cnt):
             #print(f'In pog insert: {k}, {new_v[i]}')
-            specific_table = self.generate_table(table, cnt, i)
-            info_oth = self.group[i].insert(specific_table, k, new_v[i])
+            specific_table = self.generate_table(self.table, cnt, i)
+            info_oth = self.group[i].insert(specific_table, key, new_v[i])
             info.memory += info_oth.memory
             info.hash += info_oth.hash
+
+            metrics_snap = self.group[i].metrics_snapshot()
+            for k, v in self.metrics.counters.items():
+                self.metrics.inc(k, metrics_snap[k])
+
+        self.table[key] = value
         return info
             
-    def delete(self, k):
+    def delete(self, key):
         info = Info(type='pog.delete')
         
         for i in range(len(self.group)):
-            info_oth = self.group[i].delete(k)
+            info_oth = self.group[i].delete(key)
 
             info.memory += info_oth.memory
             info.hash += info_oth.hash
+
+            metrics_snap = self.group[i].metrics_snapshot()
+            for k, v in self.metrics.counters.items():
+                self.metrics.inc(k, metrics_snap[k])
         return info
