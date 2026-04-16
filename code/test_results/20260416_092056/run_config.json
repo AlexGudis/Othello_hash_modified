@@ -1,0 +1,10 @@
+{
+  "sizes": [
+    100,
+    500,
+    1000
+  ],
+  "avg_factor": 5,
+  "find_ops_count": 50000,
+  "output_dir": "test_results/20260416_092056"
+}

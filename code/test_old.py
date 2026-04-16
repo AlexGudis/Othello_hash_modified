@@ -1,5 +1,5 @@
 import json
-from pog_old import POG_OLD
+from pog_old.pog_old import POG_OLD
 from time import time
 from common import generate_kv
 

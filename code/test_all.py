@@ -14,6 +14,7 @@ from common import generate_kv
 from cuckoo import CuckooHash
 from pog_mod import PogControl
 from linear_search import LinearSearchTable
+from pog_old.pog_old import POG_OLD
 import numpy as np
 
 
@@ -292,7 +293,7 @@ def get_or_create_table(dataset_dir: Path, n: int, avg_idx: int):
 def construct_structures(default_table, algorithm_factory):
     start = perf_counter()
 
-    if algorithm_factory is PogControl:
+    if algorithm_factory is PogControl or algorithm_factory is POG_OLD:
         algo = algorithm_factory(default_table)
     else:
         algo = algorithm_factory(len(default_table))
@@ -700,10 +701,12 @@ def plot_metric(
     series1,
     series2,
     series3=None,
+    series4=None,
     *,
     label1,
     label2,
     label3=None,
+    label4=None,
     xlabel,
     ylabel,
     title,
@@ -723,6 +726,11 @@ def plot_metric(
         if series3 is not None:
             data_list.append(series3)
             labels.append(label3)
+
+
+        if series4 is not None:
+            data_list.append(series4)
+            labels.append(label4)
 
         data = np.array(data_list, dtype=float)
 
@@ -761,6 +769,9 @@ def plot_metric(
     if series3 is not None:
         ax.plot(sizes, series3, marker="o", label=label3)
 
+    if series4 is not None:
+        ax.plot(sizes, series4, marker="o", label=label4)
+
     setup_plot(
         ax,
         xlabel=xlabel,
@@ -779,17 +790,17 @@ def plot_metric(
         )
 
     if annotate:
-        for x, y in zip(sizes, series1):
-            ax.annotate(f"{y:.4f}", (x, y), textcoords="offset points", xytext=(0, 6), ha="center", fontsize=8)
-
-        for x, y in zip(sizes, series2):
-            ax.annotate(f"{y:.4f}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
-        
-        if series3 is not None:
-            for x, y in zip(sizes, series3):
-                ax.annotate(f"{y:.4f}", (x, y), textcoords="offset points", xytext=(0, -12), ha="center", fontsize=8)
-
-
+        for ser in [series1, series2, series3, series4]:
+            if ser is not None:
+                for x, y in zip(sizes, ser):
+                    ax.annotate(
+                                    str(int(y)) if float(y).is_integer() else f"{y:.3f}",
+                                    (x, y),
+                                    textcoords="offset points",
+                                    xytext=(0, 6),
+                                    ha="center",
+                                    fontsize=8
+                                )
     fig.tight_layout()
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -799,7 +810,8 @@ def plot_metric(
 # 8. Построение конкретных графиков
 # ============================================================
 
-def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir: Path, find_ops_count, insert_coeff, linear_check=False):
+def build_all_plots(results_cuckoo, results_othello, results_linear, results_pog_old, output_dir: Path, find_ops_count, 
+                    insert_coeff, linear_check=False, pog_old_check=False):
     sizes = results_cuckoo["sizes"]
 
     plots = [
@@ -904,14 +916,21 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, output_dir:
         if linear_check:
             series3 = [transform(x) for x in results_linear[key]]
 
+        series4 = None
+        if pog_old_check:
+            series4 = [transform(x) for x in results_pog_old[key]]
+
+
         plot_metric(
             sizes,
             series1,
             series2,
             series3,
+            series4,
             label1="CuckooHash",
             label2="Pog/Othello",
             label3="LinearSearch",
+            label4="POG_OLD",
             xlabel="Размер множества ключей",
             ylabel=cfg["ylabel"],
             title=cfg["title"],
@@ -976,12 +995,13 @@ if __name__ == "__main__":
     random.seed(42)
 
     sintetic_test = True
-    linear_check = False
+    linear_check = True
+    pog_old_check = True
     insert_coeff=0.1
     if sintetic_test:
         # sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
-        sizes = [1000, 2000, 4000, 8000, 10_000, 15_000, 20_000, 30_000, 50_000, 75_000, 100_000, 130_000, 160_000, 200_000, 250_000]
-        # sizes = [100, 500, 1000]
+        # sizes = [1000, 2000, 4000, 8000, 10_000, 15_000, 20_000, 30_000, 50_000, 75_000, 100_000, 130_000, 160_000, 200_000, 250_000]
+        sizes = [100, 500, 1000]
         # sizes = [1000, 2000, 4000, 6000, 8000, 10_000, 15_000, 20_000]
         avg_factor = 5
         find_ops_count = 50_000
@@ -1021,6 +1041,21 @@ if __name__ == "__main__":
                 measure_query_only=False,
             )
             save_json(results_linear, output_dir / "results_linear_search.json")
+        
+        results_pog_old = None
+        if pog_old_check:
+
+            results_pog_old = experiment(
+                algorithm_factory=POG_OLD,
+                sizes=sizes,
+                avg_factor=avg_factor,
+                find_ops_count=find_ops_count,
+                delete_coeff=0.1,
+                insert_coeff=insert_coeff,
+                measure_query_only=False,
+            )
+            save_json(results_pog_old, output_dir / "results_pog_old.json")
+
 
         save_json(results_cuckoo, output_dir / "results_cuckoo.json")
         save_json(results_othello, output_dir / "results_pog_othello.json")
@@ -1031,10 +1066,12 @@ if __name__ == "__main__":
             results_cuckoo,
             results_othello,
             results_linear,
+            results_pog_old,
             output_dir=output_dir,
             find_ops_count=find_ops_count,
             insert_coeff=insert_coeff,
-            linear_check=linear_check
+            linear_check=linear_check,
+            pog_old_check=pog_old_check
         )
 
         print(f"\nРезультаты сохранены в папку: {output_dir}")

@@ -1,10 +1,7 @@
-from othello import Othello
+from pog_old.othello import Othello
 import bitarray
 import hashlib
-from common import Info
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from pog_old.common import Info
 from abstracts import HashAlgorithmBase
 
 # TODO: Вероятно, от этого в принципе придется отказаться, так как Отелло будет только одно в реальности. 
