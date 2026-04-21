@@ -945,7 +945,7 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, results_pog
         )
 
 
-def build_realistic_plots(results_cuckoo, results_othello, results_linear, output_dir: Path, linear_check=False):
+def build_realistic_plots(results_cuckoo, results_othello, results_linear, results_pog_old, output_dir: Path, linear_check=False, pog_old_check=False):
     sizes = results_cuckoo["sizes"]
 
     plots = [
@@ -964,6 +964,10 @@ def build_realistic_plots(results_cuckoo, results_othello, results_linear, outpu
         if linear_check:
             series3 = results_linear[metric_key]
 
+        series4 = None
+        if pog_old_check:
+            series4 = results_pog_old[metric_key]
+
 
         if metric_key == "memory_bytes":
             series1 = [x / 1024 for x in series1]
@@ -971,14 +975,19 @@ def build_realistic_plots(results_cuckoo, results_othello, results_linear, outpu
             if linear_check:
                 series3 = [x / 1024 for x in series3]
 
+            if pog_old_check:
+                series4 = [x / 1024 for x in series4]
+
         plot_metric(
             sizes,
             series1,
             series2,
             series3,
+            series4,
             label1="CuckooHash",
             label2="Pog/Othello",
             label3="LinearSearch",
+            label4="POG_OLD",
             xlabel="Размер множества ключей",
             ylabel=ylabel,
             title=title,
@@ -994,7 +1003,7 @@ def build_realistic_plots(results_cuckoo, results_othello, results_linear, outpu
 if __name__ == "__main__":
     random.seed(42)
 
-    sintetic_test = True
+    sintetic_test = False
     linear_check = True
     pog_old_check = True
     insert_coeff=0.1
@@ -1076,8 +1085,8 @@ if __name__ == "__main__":
 
         print(f"\nРезультаты сохранены в папку: {output_dir}")
     else:
-        # sizes = [30, 40, 50, 60]
-        sizes = [30, 50, 100, 300, 500, 800, 1000, 1500, 2000, 3000, 4000]
+        sizes = [30, 40, 50, 60]
+        # sizes = [30, 50, 100, 300, 500, 800, 1000, 1500, 2000, 3000, 4000]
         avg_factor = 3
         dataset_dir = Path("datasets")
         output_dir = create_output_dir()
@@ -1128,6 +1137,23 @@ if __name__ == "__main__":
             )
             save_json(results_linear_real, output_dir / "results_linear_realistic.json")
 
+
+        results_pog_old_real = None
+        if pog_old_check:
+
+            results_pog_old_real = experiment_realistic(
+                algorithm_factory=POG_OLD,
+                sizes=sizes,
+                avg_factor=avg_factor,
+                dataset_dir=dataset_dir,
+                duration_sec=realistic_profile["duration_sec"],
+                find_rate=realistic_profile["find_rate"],
+                upsert_rate=realistic_profile["upsert_rate"],
+                insert_rate=realistic_profile["insert_rate"],
+                measure_query_only=False,
+            )
+            save_json(results_pog_old_real, output_dir / "results_pog_old.json")
+
         save_json(results_cuckoo_real, output_dir / "results_cuckoo_realistic.json")
         save_json(results_othello_real, output_dir / "results_pog_realistic.json")
         save_json(realistic_profile, output_dir / "realistic_profile.json")
@@ -1137,8 +1163,10 @@ if __name__ == "__main__":
             results_cuckoo_real,
             results_othello_real,
             results_linear_real,
+            results_pog_old_real,
             output_dir=output_dir,
-            linear_check=linear_check
+            linear_check=linear_check,
+            pog_old_check=pog_old_check
         )
 
         print(f"\nРезультаты реального эксперимента сохранены в папку: {output_dir}")
