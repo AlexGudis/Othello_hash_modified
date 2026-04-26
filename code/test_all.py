@@ -817,8 +817,8 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, results_pog
     plots = [
         {
             "key": "find_time_sec",
-            "ylabel": "Время серии find-операций, сек",
-            "title": f"Время {find_ops_count} операций поиска",
+            "ylabel": "Время, сек",
+            "title": f"Время операции поиска",
             "filename": "time_find.png",
             "annotate": True,
         },
@@ -833,7 +833,7 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, results_pog
         },
         {
             "key": "construction_time",
-            "ylabel": "Время построения структуры, сек",
+            "ylabel": "Время, сек",
             "title": "Время построения структуры",
             "filename": "time_construction.png",
             "annotate": True,
@@ -843,14 +843,14 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, results_pog
             "ylabel": "Число вызовов хеш-функций",
             "title": "Хеш-функции при построении",
             "filename": "hash_calls_construct.png",
-            "annotate": True,
+            "annotate": False,
         },
         {
             "key": "memory_count_construction",
             "ylabel": "Число обращений к памяти",
             "title": "Обращения к памяти при построении",
             "filename": "memory_count_construction.png",
-            "annotate": True,
+            "annotate": False,
         },
         {
             "key": "hash_calls_find",
@@ -878,8 +878,8 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, results_pog
         },
         {
             "key": "insert_time_sec",
-            "ylabel": "Время серии вставок, сек",
-            "title": f"Время вставки правил",
+            "ylabel": "Время, сек",
+            "title": f"Время вставки правила",
             "filename": "time_insert.png",
             "annotate": True,
         },
@@ -888,14 +888,14 @@ def build_all_plots(results_cuckoo, results_othello, results_linear, results_pog
             "ylabel": "Число вызовов хеш-функций",
             "title": f"Хеш-функции при вставке",
             "filename": "hash_calls_insert.png",
-            "annotate": True,
+            "annotate": False,
         },
         {
             "key": "memory_count_insert",
             "ylabel": "Число обращений к памяти",
             "title": "Обращения к памяти при вставке",
             "filename": "memory_count_insert.png",
-            "annotate": True,
+            "annotate": False,
         },
         {
             "key": "reconstruction_count_insert",
@@ -949,12 +949,12 @@ def build_realistic_plots(results_cuckoo, results_othello, results_linear, resul
     sizes = results_cuckoo["sizes"]
 
     plots = [
-        ("build_time_sec", "Время построения структуры, сек", "Время построения структуры", "real_build_time.png", False, True),
-        ("mixed_time_sec", "Время выполнения смешанной нагрузки, сек", "Время выполнения", "real_mixed_time.png", False, False),
+        ("build_time_sec", "Время, сек", "Время построения структуры", "real_build_time.png", False, False),
+        ("mixed_time_sec", "Время, сек", "Время выполнения смешанной нагрузки", "real_mixed_time.png", False, False),
         ("keep_up_ratio", "Запас по производительности", "Отношение числа выполненных операций к целевому в секунду", "real_keep_up_ratio.png", False, False),
         ("memory_bytes", "Память, KiB", "Память итоговой структуры после смешанной нагрузки", "real_memory.png", False, True),
-        ("hash_calls_total", "Число вызовов хеш-функций", "Общее число вызовов хеш-функций", "real_hash_calls_total.png", False, False),
-        ("memory_count_total", "Число обращений к памяти", "Общее число обращений к памяти", "real_memory_count_total.png", False, False),
+        ("hash_calls_total", "Число вызовов", "Общее число вызовов хеш-функций", "real_hash_calls_total.png", False, True),
+        ("memory_count_total", "Число обращений", "Общее число обращений к памяти", "real_memory_count_total.png", False, True),
     ]
 
     for metric_key, ylabel, title, filename, x_log, y_log in plots:
@@ -994,7 +994,7 @@ def build_realistic_plots(results_cuckoo, results_othello, results_linear, resul
             output_path=output_dir / filename,
             x_log=x_log,
             y_log=y_log,
-            annotate=(metric_key not in {"hash_calls_total", "memory_count_total"}),
+            annotate=(metric_key not in {"hash_calls_total", "memory_count_total", "build_time_sec", "mixed_time_sec"}),
         )
 # ============================================================
 # 9. Точка входа
@@ -1003,14 +1003,14 @@ def build_realistic_plots(results_cuckoo, results_othello, results_linear, resul
 if __name__ == "__main__":
     random.seed(42)
 
-    sintetic_test = False
-    linear_check = True
-    pog_old_check = True
+    sintetic_test = True
+    linear_check = False
+    pog_old_check = False
     insert_coeff=0.1
     if sintetic_test:
         # sizes = [1000, 2000, 4000, 10000, 20000, 50000, 100000, 200000]
-        # sizes = [1000, 2000, 4000, 8000, 10_000, 15_000, 20_000, 30_000, 50_000, 75_000, 100_000, 130_000, 160_000, 200_000, 250_000]
-        sizes = [100, 500, 1000]
+        sizes = [1000, 10_000, 20_000, 50_000, 75_000, 100_000, 130_000, 160_000, 200_000, 250_000]
+        # sizes = [100, 500, 1000]
         # sizes = [1000, 2000, 4000, 6000, 8000, 10_000, 15_000, 20_000]
         avg_factor = 5
         find_ops_count = 50_000
@@ -1085,7 +1085,7 @@ if __name__ == "__main__":
 
         print(f"\nРезультаты сохранены в папку: {output_dir}")
     else:
-        sizes = [30, 40, 50, 60]
+        sizes = [50, 100, 150, 200, 300, 500]
         # sizes = [30, 50, 100, 300, 500, 800, 1000, 1500, 2000, 3000, 4000]
         avg_factor = 3
         dataset_dir = Path("datasets")
@@ -1094,7 +1094,7 @@ if __name__ == "__main__":
         realistic_profile = {
             "duration_sec": 1,
             "find_rate": 170_000,
-            "upsert_rate": 4000,
+            "upsert_rate": 20,
             "insert_rate": 1,
         }
 
